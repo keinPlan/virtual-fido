@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36221.1 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VirtualFido", "VirtualFido\VirtualFido.csproj", "{77D0347A-BE3F-4E45-8E27-EEBF5729F6AB}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{77D0347A-BE3F-4E45-8E27-EEBF5729F6AB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{77D0347A-BE3F-4E45-8E27-EEBF5729F6AB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{77D0347A-BE3F-4E45-8E27-EEBF5729F6AB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{77D0347A-BE3F-4E45-8E27-EEBF5729F6AB}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {8BAE1890-2BA9-425C-943E-815561BC87F1}
+	EndGlobalSection
+EndGlobal
