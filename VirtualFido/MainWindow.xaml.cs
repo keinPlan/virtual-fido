@@ -26,28 +26,14 @@ namespace VirtualFido
         public MainWindow()
         {
             InitializeComponent();
-
-
-            var buffer = new byte[100];
-
-     var mem = new Memory<byte>(buffer);
-
-            mem.Span.Slice
-
-
-
-
-            BinaryPrimitives.ReadInt64BigEndian()
-   
-
-
+             
             // "172.19.224.1"
             UsbIpServer server = new UsbIpServer("127.0.0.1", 3240);
 
-            server.VirtualUsbDevices.Add(0x00010001, new FidoUsbStick());
-            server.VirtualUsbDevices.Add(0x00010002, new FidoUsbStick());
-            server.VirtualUsbDevices.Add(0x00010003, new FidoUsbStick());
-            server.VirtualUsbDevices.Add(0x00010004, new FidoUsbStick());
+            server.VirtualUsbDevices.Add(0x00010001, new FidoUsbStick(0x00010001));
+            server.VirtualUsbDevices.Add(0x00010002, new FidoUsbStick(0x00010002));
+            server.VirtualUsbDevices.Add(0x00010003, new FidoUsbStick(0x00010003));
+            server.VirtualUsbDevices.Add(0x00010004, new FidoUsbStick(0x00010004));
             server.Start();
 
 

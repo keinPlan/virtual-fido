@@ -13,11 +13,21 @@ namespace VirtualFido.UsbIp.Device
 
     public class VirtualUsbDevice
     {
+        public int DeviceID { get; set; } = 0x00010001;
+        public short DeviceBusNum { get => (short)((DeviceID >> 16) & 0xffff); } 
+        public short DeviceBusID { get => (short) ((DeviceID >> 00) & 0xffff);  }
+
+        public VirtualUsbDevice(int deviceID)
+        {
+            DeviceID = deviceID;
+        }
+
         private Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
         public USB_DEVICE_DESCRIPTOR UsbDescriptor_Device;
         public USB_CONFIGURATION[] UsbDescriptors_Configurations;
         public Dictionary<int, USB_STRING_DESCRIPTOR> UsbDescriptor_Strings = new();
+
 
 
         public void HandleUsbRequest(TcpClient source, USBIP_CMD_SUBMIT usb_req)
@@ -52,18 +62,32 @@ namespace VirtualFido.UsbIp.Device
             }
  
         }
-
-  
-
-        private void handle_data(TcpClient source, USBIP_CMD_SUBMIT usb_req)
-        {
-            throw new NotImplementedException();
-        }
-
+        
         private void handle_usb_control(TcpClient source, USBIP_CMD_SUBMIT usb_req)
         {
             var setupData = usb_req.ParseSetupData();
-        
+            
+            if ((setupData.bmRequestType & 0x60) == 0x20) // Class Request
+            {
+                switch (setupData.bRequest)
+                {
+                    case 0x0A: // SET_IDLE
+                        SendResponse(source, usb_req, Array.Empty<byte>(), 0, 0);
+                        return;
+
+                    case 0x09: // SET_REPORT
+                        SendResponse(source, usb_req, Array.Empty<byte>(), 0, 0);
+                        return;
+
+                    case 0x01: // GET_REPORT
+                        SendResponse(source, usb_req, Array.Empty<byte>(), 0, 0);
+                        return;
+
+                    case 0x0B: // SET_PROTOCOL
+                        SendResponse(source, usb_req, Array.Empty<byte>(), 0, 0);
+                        return;
+                }
+            }
 
             if ((setupData.bmRequestType & 0x0f) == 0x00) // Standard Device Requests
             {
@@ -118,6 +142,7 @@ namespace VirtualFido.UsbIp.Device
                         case 0x06: // Device_Qualifier
                             SendResponse(source, usb_req, new byte[] { }, 0, -32); // stall
                             return;
+                        case 0x22:
                         case 0x0f: // FIDO U2F HID Report Descriptor"
                             {
                                 var data = new byte[] { 0x06, 0xd0, 0xf1, 0x09, 0x01, 0xa1, 0x01, 0x09, 0x20, 0x15, 0x00, 0x26, 0xff, 0x00, 0x75, 0x08, 0x95, 0x40, 0x81, 0x02, 0x09, 0x21, 0x15, 0x00, 0x26, 0xff, 0x00, 0x75, 0x08, 0x95, 0x40, 0x91, 0x02, 0xc0 };
@@ -132,9 +157,9 @@ namespace VirtualFido.UsbIp.Device
                                 SendResponse(source, usb_req, buffer, buffer.Length, 0);
                                 return;
                             }
-                        case 0x22:
-                            SendResponse(source, usb_req, new byte[] { }, 0, -32); // stall
-                            return;
+                        //case 0x22:
+                        //    SendResponse(source, usb_req, new byte[] { }, 0, -32); // stall
+                        //    return;
                         default:
                             break;
                     }
@@ -274,32 +299,11 @@ namespace VirtualFido.UsbIp.Device
             Logger.Info(() => $"{setupData} Unknowen");
 
         }
-
-        private void SendRequest(TcpClient source, USBIP_CMD_SUBMIT usb_req, byte[] bytes, int v1, int v2)
-        {
-             
-
-
-            var stream = source.GetStream();
-
-            using (var bw = new BinaryWriter(new MemoryStream(), System.Text.Encoding.UTF8, true))
-            {
-               usb_req.WriteToStream(bw);
-
-                var packet = (bw.BaseStream as MemoryStream).ToArray();
-                Logger.Info(() => $">> {BitConverter.ToString(packet)}");
-                stream.Write(packet, 0, packet.Length);
-                stream.Flush();
-            }
-        }
-
+         
         private void SendResponse(TcpClient source, USBIP_CMD_SUBMIT usb_req, byte[] data, int size, int status)
         {
             var rsp = new USBIP_RET_SUBMIT(usb_req, data.AsSpan(0, size).ToArray(), status);
-
-          
-
-
+             
             var stream = source.GetStream();
 
             using (var bw = new BinaryWriter(new MemoryStream(), System.Text.Encoding.UTF8, true))
@@ -310,42 +314,9 @@ namespace VirtualFido.UsbIp.Device
                 Logger.Info(() => $">> {BitConverter.ToString(packet)}");
                 stream.Write(packet, 0, packet.Length);
                 stream.Flush();
-            }
-
-
-
-            // using (var bw = new  BinaryWriter(stream, System.Text.Encoding.UTF8, true))
-            // {
-            //     rsp.WriteToStream(bw);
-            // }
+            } 
         }
 
-        // unsafe void send_usb_req(TcpClient source, USBIP_RET_SUBMIT usb_req, byte[] data, uint size, uint status)
-        // {
-        //     usb_req.command = 0x3;
-        //     usb_req.status = (int)status;
-        //     usb_req.actual_length = (int)size;
-        //     usb_req.start_frame = 0x0;
-        //     usb_req.number_of_packets = 0x0;
-        // 
-        //     usb_req.setup = 0x0;
-        //     usb_req.devid = 0x0;
-        //     usb_req.direction = 0x0;
-        //     usb_req.ep = 0x0;
-        // 
-        // 
-        //     var stream = source.GetStream();
-        // 
-        //     usb_req.WriteToStream(new BinaryWriter(stream));
-        // 
-        //     stream.Write(data, 0, (int)size);
-        // 
-        // 
-        // 
-        // 
-        // }
-
-
-
+       
     }
 }

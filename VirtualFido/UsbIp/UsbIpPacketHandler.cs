@@ -1,6 +1,8 @@
-﻿using System.Buffers.Binary;
+﻿using System;
+using System.Buffers.Binary;
 using System.IO;
 using System.Net.Sockets;
+using System.Reflection.PortableExecutable;
 using VirtualFido.UsbIp.Device;
 using VirtualFido.UsbIp.Protocol;
 using VirtualFido.UsbIp.Protocol.Helper;
@@ -9,6 +11,8 @@ namespace VirtualFido.UsbIp
 {
     public class UsbIpPacketHandler
     {
+        const int DEVICE_PACKET_HEADER_SIZE = 48;
+
         private readonly Dictionary<int, VirtualUsbDevice> _virtualUsbDevices;
         public VirtualUsbDevice AttachedDevice { get; private set; } = null;
         private bool isAttached = false;
@@ -38,7 +42,14 @@ namespace VirtualFido.UsbIp
                 if (opc == 0x8005) // OP_REQ_DEVLIST
                 {
                     bufferOffset += 8; // Move past the header
-                    Protocol.OP_REP_DEVLIST response = new(0, this._virtualUsbDevices);
+
+                    var stream = client.GetStream();
+
+                    // new ServerHeader(0x0005, 0).WriteToStream( new BinaryWriter( stream));
+
+
+
+                    var  response = new Protocol.OP_REP_DEVLIST(0, this._virtualUsbDevices);
                     var rsp = response.ToByteArray();
                     client.GetStream().Write(rsp, 0, rsp.Length);
                 }
@@ -80,19 +91,13 @@ namespace VirtualFido.UsbIp
         {
             var bufferOffset = 0;
 
-            
-
-            while (bytesInBuffer >= (bufferOffset + 48))
+            while (bytesInBuffer >= (bufferOffset + DEVICE_PACKET_HEADER_SIZE))
             {
-
-                // var command = BinaryPrimitives.ReadInt32BigEndian(buffer.AsSpan(bufferOffset + 0));
-
-
                 var packet = USBIP_CMD_SUBMIT.Parse(buffer, bufferOffset);
 
                 if (packet == null)
                     return bufferOffset;
-                bufferOffset +=  (packet.Buffer?.Length??0) + 48;
+                bufferOffset +=  (packet.Buffer?.Length??0) + DEVICE_PACKET_HEADER_SIZE;
 
                 this.AttachedDevice?.HandleUsbRequest(client, packet);
 
@@ -101,6 +106,9 @@ namespace VirtualFido.UsbIp
 
             return bufferOffset;
         }
+
+     
+
 
     }
 }

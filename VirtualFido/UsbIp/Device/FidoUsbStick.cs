@@ -64,7 +64,7 @@ namespace VirtualFido.UsbIp.Device
     {
         private NLog.Logger logger = LogManager.GetCurrentClassLogger();
 
-        public FidoUsbStick()
+        public FidoUsbStick(int deviceID):base(deviceID)     
         {
             base.UsbDescriptor_Device = new UsbTypes.USB_DEVICE_DESCRIPTOR()
             {
@@ -148,10 +148,7 @@ namespace VirtualFido.UsbIp.Device
                      },
                  }
             };
-        }
-
-
-
+        } 
     }
 
 }
