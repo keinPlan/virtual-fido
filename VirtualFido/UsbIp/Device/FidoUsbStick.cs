@@ -14,52 +14,6 @@ using VirtualFido.UsbIp.Protocol.Helper;
 
 namespace VirtualFido.UsbIp.Device
 {
-    /*
-    [StructLayout(LayoutKind.Sequential, Pack = 1)]
-    public struct USBIP_RET_SUBMIT
-    {
-        public int command;
-        public int seqnum;
-        public int devid;
-        public int direction;
-        public int ep;
-        public int status;
-        public int actual_length;
-        public int start_frame;
-        public int number_of_packets;
-        public int error_count;
-        public long setup;
-
-        byte[] ToByteArray()
-        {
-            using (var bw = new BinaryWriter(new MemoryStream()))
-            {
-                WriteToStream(bw);
-                bw.Flush();
-                return (bw.BaseStream as MemoryStream).ToArray();
-            }
-        }
-
-        public void WriteToStream(BinaryWriter bw)
-        {
-            bw.WriteMSB(command);
-            bw.WriteMSB(seqnum);
-            bw.WriteMSB(devid);
-            bw.WriteMSB(direction);
-            bw.WriteMSB(ep);
-            bw.WriteMSB(status);
-            bw.WriteMSB(actual_length);
-            bw.WriteMSB(start_frame);
-            bw.WriteMSB(number_of_packets);
-            bw.WriteMSB(error_count);
-            bw.WriteMSB(setup);
-        }
-    }
-
-    */
-
-
-
     internal class FidoUsbStick : VirtualUsbDevice
     {
         private NLog.Logger logger = LogManager.GetCurrentClassLogger();
@@ -82,10 +36,10 @@ namespace VirtualFido.UsbIp.Device
                 bNumConfigurations = 1 // Number of configurations
             };
 
-            UsbDescriptor_Strings.Add(1, new UsbTypes.USB_STRING_DESCRIPTOR("IronKey Inc."));
-            UsbDescriptor_Strings.Add(2, new UsbTypes.USB_STRING_DESCRIPTOR("Vido"));
-            UsbDescriptor_Strings.Add(3, new UsbTypes.USB_STRING_DESCRIPTOR("VIDO_123456"));
-            UsbDescriptor_Strings.Add(4, new UsbTypes.USB_STRING_DESCRIPTOR("CTAP_INTERFACE"));
+            UsbDescriptor_Strings.Add(1, new UsbTypes.USB_STRING_DESCRIPTOR("Virtual Security"));
+            UsbDescriptor_Strings.Add(2, new UsbTypes.USB_STRING_DESCRIPTOR("VFIDO Security Key"));
+            UsbDescriptor_Strings.Add(3, new UsbTypes.USB_STRING_DESCRIPTOR("VFIDO-000001"));
+            UsbDescriptor_Strings.Add(4, new UsbTypes.USB_STRING_DESCRIPTOR("CTAP2 HID"));
 
             base.UsbDescriptors_Configurations = new UsbTypes.USB_CONFIGURATION[]
             {

@@ -1,8 +1,6 @@
-﻿using System;
+using System;
 using System.Buffers.Binary;
 using System.IO;
-using System.Net.Sockets;
-using System.Reflection.PortableExecutable;
 using VirtualFido.UsbIp.Device;
 using VirtualFido.UsbIp.Protocol;
 using VirtualFido.UsbIp.Protocol.Helper;
@@ -22,14 +20,14 @@ namespace VirtualFido.UsbIp
             _virtualUsbDevices = virtualUsbDevices;
         }
 
-        public int HandleIncommingData(TcpClient client, byte[] buffer, int bytesInBuffer)
+        public int HandleIncommingData(IPacketSink client, byte[] buffer, int bytesInBuffer)
         {
             if (!isAttached)
                 return HandleServerMsg(client, buffer, bytesInBuffer);
             return HandleDeviceMsg(client, buffer, bytesInBuffer);
         }
 
-        private int HandleServerMsg(TcpClient client, byte[] buffer, int bytesInBuffer)
+        private int HandleServerMsg(IPacketSink client, byte[] buffer, int bytesInBuffer)
         {
             var bufferOffset = 0;
 
@@ -43,15 +41,8 @@ namespace VirtualFido.UsbIp
                 {
                     bufferOffset += 8; // Move past the header
 
-                    var stream = client.GetStream();
-
-                    // new ServerHeader(0x0005, 0).WriteToStream( new BinaryWriter( stream));
-
-
-
-                    var  response = new Protocol.OP_REP_DEVLIST(0, this._virtualUsbDevices);
-                    var rsp = response.ToByteArray();
-                    client.GetStream().Write(rsp, 0, rsp.Length);
+                    var response = new Protocol.OP_REP_DEVLIST(0, this._virtualUsbDevices);
+                    client.Send(response.ToByteArray());
                 }
                 else if (opc == 0x8003) // OP_REQ_DEVINFO
                 {
@@ -70,15 +61,16 @@ namespace VirtualFido.UsbIp
                     this.AttachedDevice = device;
                     this.isAttached = device != null;
 
-                    var outStream = client.GetStream();
-
-                    using (var bw = new BinaryWriter(outStream, System.Text.UTF8Encoding.Default, true))
+                    using (var ms = new MemoryStream())
+                    using (var bw = new BinaryWriter(ms, System.Text.UTF8Encoding.Default, true))
                     {
                         bw.WriteMSB(version);
                         bw.WriteMSB((ushort)(opc & 0x7fff));
                         bw.WriteMSB(device != null ? 0 : 1); // 0 => OK otherwsie end
                         if (device != null)
                             new UsbDevice(busNum, busId, device).WriteToStream(bw);
+
+                        client.Send(ms.ToArray());
                     }
                 }
 
@@ -87,7 +79,7 @@ namespace VirtualFido.UsbIp
             return bufferOffset;
         }
 
-        private int HandleDeviceMsg(TcpClient client, byte[] buffer, int bytesInBuffer)
+        private int HandleDeviceMsg(IPacketSink client, byte[] buffer, int bytesInBuffer)
         {
             var bufferOffset = 0;
 
@@ -107,7 +99,7 @@ namespace VirtualFido.UsbIp
             return bufferOffset;
         }
 
-     
+
 
 
     }

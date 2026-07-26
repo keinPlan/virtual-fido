@@ -57,6 +57,7 @@ namespace VirtualFido.UsbIp
             using (client)
             using (var stream = client.GetStream())
             {
+                var clientSink = new TcpClientPacketSink(client);
                 var buffer = new byte[4096];
                 var bufferOffset = 0;
 
@@ -69,9 +70,9 @@ namespace VirtualFido.UsbIp
                         {
                             throw new Exception("Connection lost");
                         }
-                        
+
                         bytesInBuffer += bufferOffset;
-                        bufferOffset = usbIpMessageHandler.HandleIncommingData(client, buffer, bytesInBuffer);
+                        bufferOffset = usbIpMessageHandler.HandleIncommingData(clientSink, buffer, bytesInBuffer);
 
                         if ((bytesInBuffer - bufferOffset) != 0)
                         {

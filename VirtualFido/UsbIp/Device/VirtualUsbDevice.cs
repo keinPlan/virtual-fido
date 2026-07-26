@@ -2,10 +2,10 @@
 using NLog;
 using System;
 using System.IO;
-using System.Net.Sockets;
 using System.Reflection;
 using VirtualFido.UsbIp.Device.UsbTypes;
 using VirtualFido.UsbIp.Protocol;
+using VirtualFido.UsbIp.Protocol.Helper;
 
 namespace VirtualFido.UsbIp.Device
 {
@@ -30,7 +30,7 @@ namespace VirtualFido.UsbIp.Device
 
 
 
-        public void HandleUsbRequest(TcpClient source, USBIP_CMD_SUBMIT usb_req)
+        public void HandleUsbRequest(IPacketSink source, USBIP_CMD_SUBMIT usb_req)
         {
             try
             {
@@ -63,7 +63,7 @@ namespace VirtualFido.UsbIp.Device
  
         }
         
-        private void handle_usb_control(TcpClient source, USBIP_CMD_SUBMIT usb_req)
+        private void handle_usb_control(IPacketSink source, USBIP_CMD_SUBMIT usb_req)
         {
             var setupData = usb_req.ParseSetupData();
             
@@ -300,11 +300,9 @@ namespace VirtualFido.UsbIp.Device
 
         }
          
-        private void SendResponse(TcpClient source, USBIP_CMD_SUBMIT usb_req, byte[] data, int size, int status)
+        private void SendResponse(IPacketSink source, USBIP_CMD_SUBMIT usb_req, byte[] data, int size, int status)
         {
             var rsp = new USBIP_RET_SUBMIT(usb_req, data.AsSpan(0, size).ToArray(), status);
-             
-            var stream = source.GetStream();
 
             using (var bw = new BinaryWriter(new MemoryStream(), System.Text.Encoding.UTF8, true))
             {
@@ -312,9 +310,8 @@ namespace VirtualFido.UsbIp.Device
 
                 var packet = (bw.BaseStream as MemoryStream).ToArray();
                 Logger.Info(() => $">> {BitConverter.ToString(packet)}");
-                stream.Write(packet, 0, packet.Length);
-                stream.Flush();
-            } 
+                source.Send(packet);
+            }
         }
 
        
