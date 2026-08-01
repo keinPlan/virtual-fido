@@ -3,6 +3,8 @@ using NLog;
 using System;
 using System.IO;
 using System.Reflection;
+using System.Threading;
+using VirtualFido.UsbIp.Device.Ctap;
 using VirtualFido.UsbIp.Device.UsbTypes;
 using VirtualFido.UsbIp.Protocol;
 using VirtualFido.UsbIp.Protocol.Helper;
@@ -14,7 +16,7 @@ namespace VirtualFido.UsbIp.Device
     public class VirtualUsbDevice
     {
         public int DeviceID { get; set; } = 0x00010001;
-        public short DeviceBusNum { get => (short)((DeviceID >> 16) & 0xffff); } 
+        public short DeviceBusNum { get => (short)((DeviceID >> 16) & 0xffff); }
         public short DeviceBusID { get => (short) ((DeviceID >> 00) & 0xffff);  }
 
         public VirtualUsbDevice(int deviceID)
@@ -27,6 +29,13 @@ namespace VirtualFido.UsbIp.Device
         public USB_DEVICE_DESCRIPTOR UsbDescriptor_Device;
         public USB_CONFIGURATION[] UsbDescriptors_Configurations;
         public Dictionary<int, USB_STRING_DESCRIPTOR> UsbDescriptor_Strings = new();
+
+        private readonly object _ctapLock = new();
+        private readonly CtapHidReassembler _ctapReassembler = new();
+        private readonly HashSet<uint> _ctapChannels = new();
+        private uint _nextCid = 1;
+        private readonly Queue<byte[]> _ctapOutQueue = new();
+        private (IPacketSink source, USBIP_CMD_SUBMIT usb_req, CancellationTokenSource timeout)? _pendingInRequest;
 
 
 
@@ -50,10 +59,9 @@ namespace VirtualFido.UsbIp.Device
                     handle_usb_control(source, usb_req);
                 }
                 else
-                { 
-                    Task.Delay(4000).ContinueWith(_ =>                    SendResponse(source, usb_req, new byte[0], 0, -110));
+                {
+                    HandleInterruptRequest(source, usb_req);
                     return;
-              
                 }
             }
             catch (Exception ex )
@@ -314,6 +322,137 @@ namespace VirtualFido.UsbIp.Device
             }
         }
 
-       
+        private const int CtapInPollTimeoutMs = 4000;
+
+        private void HandleInterruptRequest(IPacketSink source, USBIP_CMD_SUBMIT usb_req)
+        {
+            if (usb_req.Header.Direction == (Direction)0 && usb_req.Buffer != null)
+            {
+                HandleCtapOutReport(usb_req.Buffer);
+                SendResponse(source, usb_req, Array.Empty<byte>(), 0, 0);
+                return;
+            }
+
+            HandleCtapInPoll(source, usb_req);
+        }
+
+        private void HandleCtapOutReport(byte[] report)
+        {
+            lock (_ctapLock)
+            {
+                if (!_ctapReassembler.TryAccept(report, out var cid, out var cmd, out var payload) || payload == null)
+                    return;
+
+                if (cmd == CtapHidConstants.CTAPHID_INIT)
+                {
+                    HandleCtapInit(cid, payload);
+                }
+                else if (cmd == CtapHidConstants.CTAPHID_PING)
+                {
+                    SendCtapResponseLocked(cid, cmd, payload);
+                }
+                else if (cid != CtapHidConstants.BroadcastCid && !_ctapChannels.Contains(cid))
+                {
+                    SendCtapResponseLocked(cid, CtapHidConstants.CTAPHID_ERROR, new[] { CtapHidConstants.CTAP1_ERR_INVALID_CHANNEL });
+                }
+                else
+                {
+                    HandleCtapMessage(cid, cmd, payload);
+                }
+            }
+        }
+
+        private void HandleCtapInit(uint requestCid, byte[] nonce)
+        {
+            var assignedCid = requestCid;
+            if (requestCid == CtapHidConstants.BroadcastCid)
+            {
+                assignedCid = _nextCid++;
+                _ctapChannels.Add(assignedCid);
+            }
+
+            var response = new byte[17];
+            Array.Copy(nonce, 0, response, 0, Math.Min(nonce.Length, 8));
+            response[8] = (byte)((assignedCid >> 24) & 0xff);
+            response[9] = (byte)((assignedCid >> 16) & 0xff);
+            response[10] = (byte)((assignedCid >> 8) & 0xff);
+            response[11] = (byte)(assignedCid & 0xff);
+            response[12] = CtapHidConstants.CtapHidProtocolVersion;
+            response[13] = 1; // device version major
+            response[14] = 0; // device version minor
+            response[15] = 0; // device version build
+            response[16] = CtapHidConstants.CapabilityWink | CtapHidConstants.CapabilityCbor;
+
+            SendCtapResponseLocked(requestCid, CtapHidConstants.CTAPHID_INIT, response);
+        }
+
+        private void HandleCtapInPoll(IPacketSink source, USBIP_CMD_SUBMIT usb_req)
+        {
+            lock (_ctapLock)
+            {
+                if (_ctapOutQueue.Count > 0)
+                {
+                    var packet = _ctapOutQueue.Dequeue();
+                    SendResponse(source, usb_req, packet, packet.Length, 0);
+                    return;
+                }
+
+                var timeout = new CancellationTokenSource();
+                _pendingInRequest = (source, usb_req, timeout);
+
+                Task.Delay(CtapInPollTimeoutMs, timeout.Token).ContinueWith(t =>
+                {
+                    if (t.IsCanceled)
+                        return;
+
+                    lock (_ctapLock)
+                    {
+                        if (_pendingInRequest?.usb_req == usb_req)
+                            _pendingInRequest = null;
+                    }
+
+                    SendResponse(source, usb_req, Array.Empty<byte>(), 0, -110);
+                }, TaskScheduler.Default);
+            }
+        }
+
+        /// <summary>
+        /// Frames <paramref name="payload"/> as one or more CTAPHID HID reports and either sends it
+        /// immediately (if the host is already waiting with a pending IN poll) or queues it for the
+        /// next IN poll.
+        /// </summary>
+        protected void SendCtapResponse(uint cid, byte cmd, byte[] payload)
+        {
+            lock (_ctapLock)
+            {
+                SendCtapResponseLocked(cid, cmd, payload);
+            }
+        }
+
+        private void SendCtapResponseLocked(uint cid, byte cmd, byte[] payload)
+        {
+            foreach (var packet in CtapHidFramer.Frame(cid, cmd, payload))
+                _ctapOutQueue.Enqueue(packet);
+
+            if (_pendingInRequest == null || _ctapOutQueue.Count == 0)
+                return;
+
+            var (pendingSource, pendingRequest, pendingTimeout) = _pendingInRequest.Value;
+            _pendingInRequest = null;
+            pendingTimeout.Cancel();
+
+            var next = _ctapOutQueue.Dequeue();
+            SendResponse(pendingSource, pendingRequest, next, next.Length, 0);
+        }
+
+        /// <summary>
+        /// Called once a complete CTAPHID message (CTAPHID_MSG/CTAPHID_CBOR/etc.) has been reassembled
+        /// on an allocated channel. CTAPHID_INIT and CTAPHID_PING are handled generically above and never
+        /// reach this hook. Default implementation replies with CTAPHID_ERROR(invalid command).
+        /// </summary>
+        protected virtual void HandleCtapMessage(uint cid, byte cmd, byte[] payload)
+        {
+            SendCtapResponse(cid, CtapHidConstants.CTAPHID_ERROR, new[] { CtapHidConstants.CTAP1_ERR_INVALID_CMD });
+        }
     }
 }

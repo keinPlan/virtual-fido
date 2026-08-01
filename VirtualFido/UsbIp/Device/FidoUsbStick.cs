@@ -9,6 +9,7 @@ using System.Reflection.Metadata;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using VirtualFido.UsbIp.Device.Ctap;
 using VirtualFido.UsbIp.Protocol;
 using VirtualFido.UsbIp.Protocol.Helper;
 
@@ -102,7 +103,22 @@ namespace VirtualFido.UsbIp.Device
                      },
                  }
             };
-        } 
+        }
+
+        protected override void HandleCtapMessage(uint cid, byte cmd, byte[] payload)
+        {
+            logger.Info(() => $"CTAP cid={cid:X8} cmd={cmd:X2} len={payload.Length}");
+
+            if (cmd == CtapHidConstants.CTAPHID_CBOR)
+            {
+                var response = Ctap2.Ctap2Dispatcher.Handle(payload);
+                SendCtapResponse(cid, CtapHidConstants.CTAPHID_CBOR, response);
+                return;
+            }
+
+            // U2F (CTAPHID_MSG) and any other command: not implemented yet.
+            SendCtapResponse(cid, CtapHidConstants.CTAPHID_ERROR, new[] { CtapHidConstants.CTAP1_ERR_INVALID_CMD });
+        }
     }
 
 }
