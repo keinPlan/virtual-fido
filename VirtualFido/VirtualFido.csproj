@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -10,31 +10,17 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="UsbIp\_____UsbipDevice\**" />
-    <EmbeddedResource Remove="UsbIp\_____UsbipDevice\**" />
-    <None Remove="UsbIp\_____UsbipDevice\**" />
-    <Page Remove="UsbIp\_____UsbipDevice\**" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Compile Remove="UsbIp\Protocol\OP_IMPORT_REQUEST.cs" />
-    <Compile Remove="UsbIp\Protocol\OP_REP_IMPORT.cs" />
-    <Compile Remove="UsbIp\Protocol\OP_REQ_DEVLIST.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
     <None Remove="nlog.config" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="NLog" Version="6.0.2" />
-    <PackageReference Include="System.Formats.Cbor" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>
     <Content Include="nlog.config">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\VFido.Core\VFido.Core.csproj" />
   </ItemGroup>
 
 </Project>

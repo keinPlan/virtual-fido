@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using VirtualFido.UsbIp.Protocol.Helper;
+using VFido.Core.Protocol.Helper;
 
 namespace VirtualFido.Tests
 {

@@ -1,6 +1,6 @@
 using System.IO;
-using VirtualFido.UsbIp.Protocol;
-using VirtualFido.UsbIp.Protocol.Helper;
+using VFido.Core.Protocol;
+using VFido.Core.Protocol.Helper;
 using Xunit;
 
 namespace VirtualFido.Tests

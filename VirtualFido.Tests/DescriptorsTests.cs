@@ -1,4 +1,4 @@
-using VirtualFido.UsbIp.Device.UsbTypes;
+using VFido.Core.Device.UsbTypes;
 using Xunit;
 
 namespace VirtualFido.Tests

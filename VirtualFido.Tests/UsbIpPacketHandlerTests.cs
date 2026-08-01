@@ -1,6 +1,6 @@
 using System.Collections.Generic;
-using VirtualFido.UsbIp;
-using VirtualFido.UsbIp.Device;
+using VFido.Core;
+using VFido.Core.Device;
 using Xunit;
 
 namespace VirtualFido.Tests

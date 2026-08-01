@@ -1,7 +1,9 @@
 using System;
-using VirtualFido.UsbIp.Device;
-using VirtualFido.UsbIp.Device.Ctap;
-using VirtualFido.UsbIp.Protocol;
+using System.Threading;
+using VFido.Core.Device;
+using VFido.Core.Device.Ctap;
+using VFido.Core.Device.Ctap2;
+using VFido.Core.Protocol;
 using Xunit;
 
 namespace VirtualFido.Tests
@@ -123,20 +125,35 @@ namespace VirtualFido.Tests
         }
 
         [Fact]
-        public void CtapHidCbor_ReachesFidoUsbStickStubAndRepliesWithError()
+        public void CtapHidCbor_UnknownCommandRepliesWithCborStatusError()
         {
             var device = new FidoUsbStick(0x00010001);
             var sink = new FakePacketSink();
             var cid = Handshake(device, sink);
 
-            foreach (var packet in CtapHidFramer.Frame(cid, CtapHidConstants.CTAPHID_CBOR, new byte[] { 0x04 }))
+            // 0xFF is not a mapped CTAP2 command. CTAP2 dispatch errors are reported as a status
+            // byte inside a CTAPHID_CBOR response, not via the transport-level CTAPHID_ERROR frame
+            // (that's reserved for things like an invalid channel).
+            foreach (var packet in CtapHidFramer.Frame(cid, CtapHidConstants.CTAPHID_CBOR, new byte[] { 0xFF }))
                 SendOut(device, sink, packet);
 
-            var report = PollIn(device, sink);
+            // CBOR dispatch (including any user-presence wait) runs on a background thread now, so
+            // poll for the response instead of assuming it's ready the instant the OUT report returns.
+            byte[]? report = null;
+            for (var i = 0; i < 50 && report == null; i++)
+            {
+                var candidate = PollIn(device, sink);
+                if (candidate.Length > 7 && candidate[4] == CtapHidConstants.CTAPHID_CBOR)
+                    report = candidate;
+                else
+                    Thread.Sleep(20);
+            }
 
-            Assert.Equal(CtapHidConstants.CTAPHID_ERROR, report[4]);
+            Assert.NotNull(report);
+            Assert.Equal(CtapHidConstants.CTAPHID_CBOR, report[4]);
             var bcnt = (report[5] << 8) | report[6];
             Assert.Equal(1, bcnt);
+            Assert.Equal(Ctap2Constants.Ctap1ErrInvalidCommand, report[7]);
             Assert.Equal(CtapHidConstants.CTAP1_ERR_INVALID_CMD, report[7]);
         }
     }

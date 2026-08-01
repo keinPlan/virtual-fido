@@ -1,5 +1,5 @@
 using System;
-using VirtualFido.UsbIp.Protocol;
+using VFido.Core.Protocol;
 using Xunit;
 
 namespace VirtualFido.Tests

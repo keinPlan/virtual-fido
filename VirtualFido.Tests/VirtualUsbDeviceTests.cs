@@ -1,6 +1,6 @@
 using System;
-using VirtualFido.UsbIp.Device;
-using VirtualFido.UsbIp.Protocol;
+using VFido.Core.Device;
+using VFido.Core.Protocol;
 using Xunit;
 
 namespace VirtualFido.Tests

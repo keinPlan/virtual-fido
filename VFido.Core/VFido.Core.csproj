@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Protocol\OP_IMPORT_REQUEST.cs" />
+    <Compile Remove="Protocol\OP_REP_IMPORT.cs" />
+    <Compile Remove="Protocol\OP_REQ_DEVLIST.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NLog" Version="6.0.2" />
+    <PackageReference Include="System.Formats.Cbor" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="VirtualFido" />
+    <InternalsVisibleTo Include="VirtualFido.Tests" />
+  </ItemGroup>
+
+</Project>
