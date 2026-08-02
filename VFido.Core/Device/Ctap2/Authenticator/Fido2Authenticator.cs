@@ -19,7 +19,6 @@ namespace VFido.Core.Device.Ctap2.Authenticator
         private readonly IUserPresenceGate _presence;
         private readonly PinManager _pin;
         private readonly byte[] _aaguid;
-        private readonly PinUsagePreference _pinUsage;
 
         // authenticatorGetNextAssertion session state: the remaining discoverable credentials
         // (beyond the one already returned by GetAssertion) for the most recent RP/request.
@@ -29,18 +28,16 @@ namespace VFido.Core.Device.Ctap2.Authenticator
         private byte[]? _pendingClientDataHash;
         private bool _pendingUserVerified;
 
-        internal Fido2Authenticator(IFido2SecretManager secrets, byte[] aaguid, PinUsagePreference pinUsage, IUserPresenceGate? presence = null, IPinStateStore? pinStateStore = null)
+        internal Fido2Authenticator(IFido2SecretManager secrets, byte[] aaguid, IUserPresenceGate? presence = null, IPinStateStore? pinStateStore = null)
         {
             _secrets = secrets;
             _pin = new PinManager(pinStateStore);
             _aaguid = aaguid;
-            _pinUsage = pinUsage;
             _presence = presence ?? AlwaysApproveUserPresenceGate.Instance;
         }
 
         public bool IsPinSet => _pin.IsPinSet;
         public byte[] Aaguid => _aaguid;
-        public PinUsagePreference PinUsage => _pinUsage;
 
         public async Task<MakeCredentialResult> MakeCredentialAsync(MakeCredentialRequest request)
         {
@@ -57,8 +54,7 @@ namespace VFido.Core.Device.Ctap2.Authenticator
             }
 
             // credProtect level 3 (userVerificationRequired) mandates UV at creation time too, not
-            // just for later assertions - independent of pin_usage, since it's an RP-driven, per-
-            // credential requirement rather than this stick's own authenticator-wide preference.
+            // just for later assertions.
             var credProtect = request.CredProtect is >= 1 and <= 3 ? request.CredProtect.Value : 1;
             var userVerified = RequireUserVerification(request.RequireUserVerification, request.PinUvAuthParam, request.ClientDataHash, forceUv: credProtect == 3);
 
@@ -115,7 +111,7 @@ namespace VFido.Core.Device.Ctap2.Authenticator
 
             // credProtect (CTAP2 §11.3): level 3 always requires UV; level 2 only requires it when
             // the credential was discovered via an empty allowList rather than explicitly named by
-            // the platform. This is per-credential and enforced regardless of pin_usage.
+            // the platform.
             var forceUv = credential.CredProtect switch
             {
                 3 => true,
@@ -194,36 +190,14 @@ namespace VFido.Core.Device.Ctap2.Authenticator
         /// </summary>
         /// <param name="forceUv">
         /// A hard per-credential requirement (credProtect level 3, or level 2 discovered via an
-        /// empty allowList) that must be honored even under pin_usage=Avoid - unlike the platform's
-        /// own options.uv, which pin_usage is free to override, this comes from the relying party
-        /// and this stick has no discretion to silently ignore it.
+        /// empty allowList) that must be honored even if the platform's own request didn't ask for
+        /// UV - this comes from the relying party and this stick has no discretion to ignore it.
         /// </param>
         private bool RequireUserVerification(bool uvRequested, byte[]? pinUvAuthParam, byte[] clientDataHash, bool forceUv = false)
         {
-            // pin_usage overrides what the platform actually asked for: Always forces UV even for
-            // requests that didn't set options.uv; Avoid never insists on it even if they did,
-            // unless forceUv overrides that too. A pinUvAuthParam the platform sends unprompted is
-            // still honored either way below.
-            uvRequested = _pinUsage switch
-            {
-                PinUsagePreference.Always => true,
-                PinUsagePreference.Avoid => forceUv,
-                _ => uvRequested || forceUv,
-            };
+            uvRequested = uvRequested || forceUv;
 
-            Logger.Debug(() => $"UV negotiation: uvRequested={uvRequested} pinUsage={_pinUsage} forceUv={forceUv} pinIsSet={_pin.IsPinSet} pinUvAuthParamPresent={pinUvAuthParam != null} pinUvAuthParamLen={pinUvAuthParam?.Length ?? -1}");
-
-            // Avoid means never make the platform go through ClientPIN - not even the zero-length
-            // probe, and not the "PIN is set, so a pinUvAuthParam is mandatory" branch below, which
-            // otherwise applies unconditionally once a PIN exists regardless of pin_usage. Only a
-            // pinUvAuthParam the platform actually included (non-empty) is still honored, since we
-            // can't refuse valid proof it chose to send anyway. Skipped entirely when forceUv is
-            // set - a hard per-credential requirement Avoid can't override.
-            if (_pinUsage == PinUsagePreference.Avoid && !forceUv && pinUvAuthParam is not { Length: > 0 })
-            {
-                Logger.Debug(() => "pin_usage=Avoid and no real pinUvAuthParam supplied - proceeding without UV");
-                return false;
-            }
+            Logger.Debug(() => $"UV negotiation: uvRequested={uvRequested} forceUv={forceUv} pinIsSet={_pin.IsPinSet} pinUvAuthParamPresent={pinUvAuthParam != null} pinUvAuthParamLen={pinUvAuthParam?.Length ?? -1}");
 
             // CTAP2 6.1/6.2: a zero-length pinUvAuthParam is the platform probing whether it
             // needs to run ClientPIN before it can satisfy UV here, without committing to it.
@@ -248,8 +222,14 @@ namespace VFido.Core.Device.Ctap2.Authenticator
 
             if (pinUvAuthParam == null)
             {
-                Logger.Debug(() => "PIN is set but request carries no pinUvAuthParam - rejecting with PIN_REQUIRED");
-                throw new Ctap2Exception(Ctap2Constants.Ctap2ErrPinRequired);
+                if (uvRequested)
+                {
+                    Logger.Debug(() => "PIN is set, UV requested, but request carries no pinUvAuthParam - rejecting with PIN_REQUIRED");
+                    throw new Ctap2Exception(Ctap2Constants.Ctap2ErrPinRequired);
+                }
+
+                Logger.Debug(() => "PIN is set but UV not requested and no pinUvAuthParam supplied - proceeding without UV");
+                return false;
             }
 
             if (!_pin.VerifyPinUvAuthParam(pinUvAuthParam, clientDataHash))

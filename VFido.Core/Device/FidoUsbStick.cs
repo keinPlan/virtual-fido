@@ -24,7 +24,6 @@ namespace VFido.Core.Device
         public FidoUsbStick(int deviceID,
             string? serialNumber = null,
             byte[]? aaguid = null,
-            Ctap2.Authenticator.Pin.PinUsagePreference pinUsage = Ctap2.Authenticator.Pin.PinUsagePreference.Prefer,
             Ctap2.Authenticator.IUserPresenceGate? presenceGate = null,
             IFido2SecretManager? secretManager = null,
             IPinStateStore? pinStateStore = null) : base(deviceID)
@@ -37,7 +36,6 @@ namespace VFido.Core.Device
                     new VFido.SecretManager.MemoryBasedSecretStore.MemoryBasedSecretStore(),
                     new VFido.SecretManager.MemoryBasedSecretStore.InMemoryCredentialStore()),
                 aaguid,
-                pinUsage,
                 presenceGate,
                 pinStateStore);
 

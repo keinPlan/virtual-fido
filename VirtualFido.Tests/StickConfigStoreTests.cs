@@ -1,4 +1,3 @@
-using VFido.Core.Device.Ctap2.Authenticator.Pin;
 using VFido.Gui.Configuration;
 using Xunit;
 
@@ -27,14 +26,13 @@ namespace VirtualFido.Tests
         {
             var store = new StickConfigStore(_root);
 
-            var created = store.Create("My Stick", Guid.NewGuid(), "VFIDO-0001", new MemorySecretManagerConfig(), PinUsagePreference.Always);
+            var created = store.Create("My Stick", Guid.NewGuid(), "VFIDO-0001", new MemorySecretManagerConfig());
 
             var loaded = Assert.Single(store.LoadAll());
             Assert.Equal(created.Id, loaded.Id);
             Assert.Equal("My Stick", loaded.Name);
             Assert.Equal("VFIDO-0001", loaded.SerialNumberIdentifier);
             Assert.Equal(created.Aaguid, loaded.Aaguid);
-            Assert.Equal(PinUsagePreference.Always, loaded.PinUsage);
             Assert.IsType<MemorySecretManagerConfig>(loaded.SecretManager);
         }
 
@@ -44,7 +42,7 @@ namespace VirtualFido.Tests
             var store = new StickConfigStore(_root);
 
             store.Create("File stick", Guid.NewGuid(), "VFIDO-0002",
-                new FileSecretManagerConfig { Username = "alice" }, PinUsagePreference.Prefer);
+                new FileSecretManagerConfig { Username = "alice" });
 
             var loaded = Assert.Single(store.LoadAll());
             var fileConfig = Assert.IsType<FileSecretManagerConfig>(loaded.SecretManager);
@@ -65,7 +63,7 @@ namespace VirtualFido.Tests
                 Username = "bob",
                 ClientCertificatePath = "client.pfx",
                 ServerCaCertificatePath = "ca.crt",
-            }, PinUsagePreference.Avoid);
+            });
 
             var loaded = Assert.Single(store.LoadAll());
             var mtlsConfig = Assert.IsType<MtlsSecretManagerConfig>(loaded.SecretManager);
@@ -79,7 +77,7 @@ namespace VirtualFido.Tests
         public void LoadAll_SkipsACorruptStickFolderButStillReturnsTheOthers()
         {
             var store = new StickConfigStore(_root);
-            store.Create("Good stick", Guid.NewGuid(), "VFIDO-0004", new MemorySecretManagerConfig(), PinUsagePreference.Prefer);
+            store.Create("Good stick", Guid.NewGuid(), "VFIDO-0004", new MemorySecretManagerConfig());
 
             var corruptDir = Path.Combine(_root, Guid.NewGuid().ToString());
             Directory.CreateDirectory(corruptDir);
@@ -107,7 +105,7 @@ namespace VirtualFido.Tests
         public void Delete_RemovesTheStickFolder()
         {
             var store = new StickConfigStore(_root);
-            var created = store.Create("Doomed stick", Guid.NewGuid(), "VFIDO-0005", new MemorySecretManagerConfig(), PinUsagePreference.Prefer);
+            var created = store.Create("Doomed stick", Guid.NewGuid(), "VFIDO-0005", new MemorySecretManagerConfig());
 
             store.Delete(created.Id);
 

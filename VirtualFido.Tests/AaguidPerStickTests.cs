@@ -1,7 +1,6 @@
 using System.Formats.Cbor;
 using VFido.Core.Device.Ctap2;
 using VFido.Core.Device.Ctap2.Authenticator;
-using VFido.Core.Device.Ctap2.Authenticator.Pin;
 using VFido.SecretManager;
 using VFido.SecretManager.MemoryBasedSecretStore;
 using Xunit;
@@ -32,7 +31,7 @@ namespace VirtualFido.Tests
         }
 
         private static Fido2Authenticator NewAuthenticator(byte[] aaguid) =>
-            new(new Fido2SecretManager(new MemoryBasedSecretStore(), new InMemoryCredentialStore()), aaguid, PinUsagePreference.Prefer);
+            new(new Fido2SecretManager(new MemoryBasedSecretStore(), new InMemoryCredentialStore()), aaguid);
 
         [Fact]
         public async Task GetInfo_ReportsThePerStickConfiguredAaguid_NotASharedConstant()

@@ -26,15 +26,6 @@
                 </Grid>
             </StackPanel>
 
-            <StackPanel Spacing="4">
-                <TextBlock Text="PIN usage"/>
-                <ComboBox x:Name="PinUsageBox" HorizontalAlignment="Stretch">
-                    <ComboBoxItem Content="Prefer"/>
-                    <ComboBoxItem Content="Avoid"/>
-                    <ComboBoxItem Content="Always"/>
-                </ComboBox>
-            </StackPanel>
-
             <StackPanel x:Name="SecretManagerSection" Spacing="4">
                 <TextBlock Text="Secret manager"/>
                 <ComboBox x:Name="SecretManagerTypeBox" HorizontalAlignment="Stretch" SelectionChanged="SecretManagerType_SelectionChanged">

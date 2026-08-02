@@ -1,7 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using NLog;
-using VFido.Core.Device.Ctap2.Authenticator.Pin;
 
 namespace VFido.Gui.Configuration;
 
@@ -60,7 +59,7 @@ public sealed class StickConfigStore : IStickConfigStore
         return configs;
     }
 
-    public StickConfig Create(string name, Guid aaguid, string serialNumber, SecretManagerConfig secretManager, PinUsagePreference pinUsage)
+    public StickConfig Create(string name, Guid aaguid, string serialNumber, SecretManagerConfig secretManager)
     {
         var config = new StickConfig
         {
@@ -68,7 +67,6 @@ public sealed class StickConfigStore : IStickConfigStore
             Name = name,
             SerialNumberIdentifier = serialNumber,
             Aaguid = aaguid,
-            PinUsage = pinUsage,
             SecretManager = secretManager,
         };
 

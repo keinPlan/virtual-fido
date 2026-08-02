@@ -75,7 +75,6 @@ public sealed class StickManager : IStickManager
             deviceId,
             config.SerialNumberIdentifier,
             config.Aaguid.ToByteArray(),
-            config.PinUsage,
             new AvaloniaUserPresenceGate(config.Name),
             secretManager,
             pinStateStore);

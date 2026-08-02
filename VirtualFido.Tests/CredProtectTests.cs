@@ -13,15 +13,15 @@ namespace VirtualFido.Tests
 {
     /// <summary>
     /// Covers the credProtect extension (CTAP2 §11.3): level 3 always requires UV (even at
-    /// creation time, and even under pin_usage=Avoid); level 2 only requires UV when a credential
-    /// is discovered via an empty allowList rather than explicitly named; level 1 (default, or
-    /// when the extension isn't requested) behaves exactly like today.
+    /// creation time); level 2 only requires UV when a credential is discovered via an empty
+    /// allowList rather than explicitly named; level 1 (default, or when the extension isn't
+    /// requested) behaves exactly like today.
     /// </summary>
     public class CredProtectTests
     {
-        private static Fido2Authenticator NewAuthenticator(PinUsagePreference pinUsage = PinUsagePreference.Prefer) =>
+        private static Fido2Authenticator NewAuthenticator() =>
             new(new Fido2SecretManager(new MemoryBasedSecretStore(), new InMemoryCredentialStore()),
-                aaguid: Guid.NewGuid().ToByteArray(), pinUsage);
+                aaguid: Guid.NewGuid().ToByteArray());
 
         private static MakeCredentialRequest NewMakeCredentialRequest(int? credProtect, bool requireResidentKey = true, bool requireUserVerification = false, byte[]? pinUvAuthParam = null) => new(
             ClientDataHash: new byte[32],
@@ -120,17 +120,6 @@ namespace VirtualFido.Tests
         public async Task MakeCredential_CredProtectLevel3_NoPinSet_RequiresPinRegardlessOfRequest()
         {
             var authenticator = NewAuthenticator();
-
-            var ex = await Assert.ThrowsAsync<Ctap2Exception>(
-                () => authenticator.MakeCredentialAsync(NewMakeCredentialRequest(credProtect: 3, requireUserVerification: false)));
-
-            Assert.Equal(VFido.Core.Device.Ctap2.Ctap2Constants.Ctap2ErrPinRequired, ex.StatusCode);
-        }
-
-        [Fact]
-        public async Task MakeCredential_CredProtectLevel3_EvenUnderAvoid_StillRequiresPin()
-        {
-            var authenticator = NewAuthenticator(PinUsagePreference.Avoid);
 
             var ex = await Assert.ThrowsAsync<Ctap2Exception>(
                 () => authenticator.MakeCredentialAsync(NewMakeCredentialRequest(credProtect: 3, requireUserVerification: false)));

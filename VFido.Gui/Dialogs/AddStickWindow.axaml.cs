@@ -1,7 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
-using VFido.Core.Device.Ctap2.Authenticator.Pin;
 using VFido.Gui.Configuration;
 using VFido.SecretManager.FileBasedSecretStore;
 
@@ -18,7 +17,6 @@ public partial class AddStickWindow : Window
         InitializeComponent();
         AaguidBox.Text = Guid.NewGuid().ToString();
         SerialNumberBox.Text = "VFIDO-" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
-        PinUsageBox.SelectedIndex = 0;
         SecretManagerTypeBox.SelectedIndex = 0;
     }
 
@@ -30,8 +28,8 @@ public partial class AddStickWindow : Window
     }
 
     /// <summary>
-    /// Edit mode only touches Name/SerialNumberIdentifier/Aaguid/PinUsage - the secret manager
-    /// backend is fixed at creation time to avoid orphaning already-created key/credential files.
+    /// Edit mode only touches Name/SerialNumberIdentifier/Aaguid - the secret manager backend is
+    /// fixed at creation time to avoid orphaning already-created key/credential files.
     /// </summary>
     public static async Task<StickConfig?> EditAsync(Window owner, IStickConfigStore configStore, StickConfig existing)
     {
@@ -44,7 +42,6 @@ public partial class AddStickWindow : Window
         window.NameBox.Text = existing.Name;
         window.SerialNumberBox.Text = existing.SerialNumberIdentifier;
         window.AaguidBox.Text = existing.Aaguid.ToString();
-        window.PinUsageBox.SelectedIndex = (int)existing.PinUsage;
         window.SecretManagerSection.IsVisible = false;
         window.FilePanel.IsVisible = false;
         window.MtlsPanel.IsVisible = false;
@@ -96,14 +93,11 @@ public partial class AddStickWindow : Window
             return;
         }
 
-        var pinUsage = (PinUsagePreference)PinUsageBox.SelectedIndex;
-
         if (_existing != null)
         {
             _existing.Name = NameBox.Text!;
             _existing.SerialNumberIdentifier = SerialNumberBox.Text!;
             _existing.Aaguid = aaguid;
-            _existing.PinUsage = pinUsage;
 
             try
             {
@@ -167,7 +161,7 @@ public partial class AddStickWindow : Window
 
         try
         {
-            _result = _configStore!.Create(NameBox.Text!, aaguid, SerialNumberBox.Text!, secretManager, pinUsage);
+            _result = _configStore!.Create(NameBox.Text!, aaguid, SerialNumberBox.Text!, secretManager);
 
             // Eagerly initialize the encrypted store now, while the password is still on screen,
             // instead of waiting for the first Connect - it's never written to config.json either

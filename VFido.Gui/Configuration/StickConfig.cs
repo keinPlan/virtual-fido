@@ -1,5 +1,3 @@
-using VFido.Core.Device.Ctap2.Authenticator.Pin;
-
 namespace VFido.Gui.Configuration;
 
 /// <summary>
@@ -13,6 +11,5 @@ public sealed class StickConfig
     public required string Name { get; set; }
     public required string SerialNumberIdentifier { get; set; }
     public required Guid Aaguid { get; set; }
-    public PinUsagePreference PinUsage { get; set; } = PinUsagePreference.Prefer;
     public required SecretManagerConfig SecretManager { get; set; }
 }
