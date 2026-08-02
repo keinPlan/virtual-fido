@@ -52,7 +52,7 @@ app.MapPost(SecretManagerRoutes.Login, (LoginRequest request, IUserCredentialSto
 var api = app.MapGroup("").AddEndpointFilter<BearerAuthFilter>();
 
 api.MapPost(SecretManagerRoutes.CreateCredential, async (CreateCredentialRequest request, IFido2SecretManager manager) =>
-    Results.Ok(await manager.CreateCredentialAsync(request.RpId, request.UserId, request.UserName, request.UserDisplayName, request.IsResident)));
+    Results.Ok(await manager.CreateCredentialAsync(request.RpId, request.UserId, request.UserName, request.UserDisplayName, request.IsResident, request.CredProtect)));
 
 api.MapPost(SecretManagerRoutes.CredentialExists, async (CredentialExistsRequest request, IFido2SecretManager manager) =>
     Results.Ok(new CredentialExistsResponse(await manager.CredentialExistsAsync(request.CredentialId, request.RpId))));

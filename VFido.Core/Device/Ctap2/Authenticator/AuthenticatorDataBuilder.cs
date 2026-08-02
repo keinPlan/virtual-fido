@@ -12,17 +12,22 @@ namespace VFido.Core.Device.Ctap2.Authenticator
         private const byte FlagUserPresent = 0x01;
         private const byte FlagUserVerified = 0x04;
         private const byte FlagAttestedCredentialDataIncluded = 0x40;
+        private const byte FlagExtensionDataIncluded = 0x80;
 
-        internal static byte[] BuildWithAttestedCredential(string rpId, byte[] aaguid, byte[] credentialId, byte[] coseKey, uint signCount, bool userVerified = false)
+        /// <summary><paramref name="extensions"/>, if given, must already be a CBOR-encoded extensions map (e.g. the credProtect output) - it's appended as-is and sets the ED flag.</summary>
+        internal static byte[] BuildWithAttestedCredential(string rpId, byte[] aaguid, byte[] credentialId, byte[] coseKey, uint signCount, bool userVerified = false, byte[]? extensions = null)
         {
             using var ms = new MemoryStream();
             ms.Write(ComputeRpIdHash(rpId));
-            ms.WriteByte((byte)(FlagUserPresent | FlagAttestedCredentialDataIncluded | (userVerified ? FlagUserVerified : 0)));
+            var flags = FlagUserPresent | FlagAttestedCredentialDataIncluded | (userVerified ? FlagUserVerified : 0) | (extensions != null ? FlagExtensionDataIncluded : 0);
+            ms.WriteByte((byte)flags);
             WriteUInt32BigEndian(ms, signCount);
             ms.Write(aaguid);
             WriteUInt16BigEndian(ms, (ushort)credentialId.Length);
             ms.Write(credentialId);
             ms.Write(coseKey);
+            if (extensions != null)
+                ms.Write(extensions);
             return ms.ToArray();
         }
 

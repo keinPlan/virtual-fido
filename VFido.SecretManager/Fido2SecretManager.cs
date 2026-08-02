@@ -21,7 +21,7 @@ namespace VFido.SecretManager
             _credentials = credentials;
         }
 
-        public Task<CredentialRegistration> CreateCredentialAsync(string rpId, byte[] userId, string userName, string userDisplayName, bool isResident)
+        public Task<CredentialRegistration> CreateCredentialAsync(string rpId, byte[] userId, string userName, string userDisplayName, bool isResident, int credProtect)
         {
             var key = _keys.CreateEs256Key();
             var credentialId = RandomNumberGenerator.GetBytes(32);
@@ -36,6 +36,7 @@ namespace VFido.SecretManager
                 IsResident = isResident,
                 UserName = userName,
                 UserDisplayName = userDisplayName,
+                CredProtect = credProtect,
             });
 
             return Task.FromResult(new CredentialRegistration(credentialId, key.ExportCosePublicKey(), key.CoseAlgorithm));
@@ -57,6 +58,11 @@ namespace VFido.SecretManager
         {
             var credential = RequireCredential(credentialId);
             credential.SignCount++;
+            // Must persist explicitly: ICredentialStore.Find isn't guaranteed to return a live,
+            // shared reference (InMemoryCredentialStore does; FileBasedCredentialStore decodes a
+            // fresh copy from disk every call), so mutating in place alone can silently lose the
+            // increment and make every login look like a replay of a previous sign count.
+            _credentials.Save(credential);
             return Task.FromResult(credential.SignCount);
         }
 
@@ -71,6 +77,6 @@ namespace VFido.SecretManager
 
         private static CredentialInfo ToInfo(StoredCredential credential) => new(
             credential.CredentialId, credential.RpId, credential.UserId,
-            credential.UserName, credential.UserDisplayName, credential.IsResident, credential.SignCount);
+            credential.UserName, credential.UserDisplayName, credential.IsResident, credential.SignCount, credential.CredProtect);
     }
 }

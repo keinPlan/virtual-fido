@@ -92,5 +92,26 @@ namespace VirtualFido.Tests
 
             Assert.Throws<InvalidCredentialsException>(() => new FileBasedCredentialStore(_directory, "user", "wrong-pass"));
         }
+
+        [Fact]
+        public async Task Fido2SecretManager_IncrementSignCountAsync_PersistsAcrossCallsBackedByFileBasedStore()
+        {
+            // Regression: FileBasedCredentialStore.Find decodes a fresh object from disk every
+            // call (unlike InMemoryCredentialStore, which hands back the same live reference), so
+            // Fido2SecretManager must explicitly Save() after incrementing or the count silently
+            // resets to 1 on every login instead of climbing 1, 2, 3... - which real WebAuthn
+            // relying parties reject as a possible cloned authenticator.
+            var keys = new FileBasedSecretStore(Path.Combine(_directory, "keys"), "user", "pass");
+            var credentials = new FileBasedCredentialStore(_directory, "user", "pass");
+            var manager = new Fido2SecretManager(keys, credentials);
+
+            var registration = await manager.CreateCredentialAsync("example.com", new byte[] { 1 }, "alice", "Alice", isResident: true, credProtect: 1);
+
+            var first = await manager.IncrementSignCountAsync(registration.CredentialId);
+            var second = await manager.IncrementSignCountAsync(registration.CredentialId);
+
+            Assert.Equal(1u, first);
+            Assert.Equal(2u, second);
+        }
     }
 }

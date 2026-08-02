@@ -3,7 +3,7 @@ namespace VFido.SecretManager
     // One request/response pair per IFido2SecretManager method. byte[] members round-trip as base64
     // via System.Text.Json, so these carry credential ids / user ids / signatures as-is.
 
-    public sealed record CreateCredentialRequest(string RpId, byte[] UserId, string UserName, string UserDisplayName, bool IsResident);
+    public sealed record CreateCredentialRequest(string RpId, byte[] UserId, string UserName, string UserDisplayName, bool IsResident, int CredProtect = 1);
 
     public sealed record CredentialExistsRequest(byte[] CredentialId, string RpId);
     public sealed record CredentialExistsResponse(bool Exists);

@@ -16,11 +16,16 @@ namespace VFido.Core.Device.Ctap2.Commands
 
             var writer = new CborWriter(CborConformanceMode.Ctap2Canonical);
 
-            writer.WriteStartMap(8);
+            writer.WriteStartMap(9);
 
             writer.WriteInt32(Ctap2Constants.InfoKeyVersions);
             writer.WriteStartArray(1);
             writer.WriteTextString("FIDO_2_0");
+            writer.WriteEndArray();
+
+            writer.WriteInt32(Ctap2Constants.InfoKeyExtensions);
+            writer.WriteStartArray(1);
+            writer.WriteTextString("credProtect");
             writer.WriteEndArray();
 
             writer.WriteInt32(Ctap2Constants.InfoKeyAaguid);

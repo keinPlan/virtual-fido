@@ -8,5 +8,6 @@ namespace VFido.SecretManager
         string UserName,
         string UserDisplayName,
         bool IsResident,
-        uint SignCount);
+        uint SignCount,
+        int CredProtect = 1);
 }

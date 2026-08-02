@@ -13,7 +13,7 @@ namespace VFido.SecretManager
     public interface IFido2SecretManager
     {
         /// <summary>Generates a new credential key pair and persists it, returning only its public half.</summary>
-        Task<CredentialRegistration> CreateCredentialAsync(string rpId, byte[] userId, string userName, string userDisplayName, bool isResident);
+        Task<CredentialRegistration> CreateCredentialAsync(string rpId, byte[] userId, string userName, string userDisplayName, bool isResident, int credProtect);
 
         /// <summary>True if a credential with this id exists for this RP (for authenticatorMakeCredential's excludeList).</summary>
         Task<bool> CredentialExistsAsync(byte[] credentialId, string rpId);

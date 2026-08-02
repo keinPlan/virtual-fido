@@ -16,7 +16,7 @@ namespace VFido.Core.Device.Ctap2.Commands
         {
             var request = Decode(body);
             Logger.Debug(() => $"authenticatorMakeCredential rp={request.RelyingParty.Id} user={request.User.Name} " +
-                $"excludeListCount={request.ExcludeList?.Count ?? 0} rk={request.RequireResidentKey} uv={request.RequireUserVerification}");
+                $"excludeListCount={request.ExcludeList?.Count ?? 0} rk={request.RequireResidentKey} uv={request.RequireUserVerification} credProtect={request.CredProtect?.ToString() ?? "none"}");
 
             var result = await authenticator.MakeCredentialAsync(request);
             return Encode(result);
@@ -36,6 +36,7 @@ namespace VFido.Core.Device.Ctap2.Commands
             byte? pinUvAuthProtocol = null;
             var residentKey = false;
             var requireUserVerification = false;
+            int? credProtect = null;
 
             while (reader.PeekState() != CborReaderState.EndMap)
             {
@@ -56,6 +57,9 @@ namespace VFido.Core.Device.Ctap2.Commands
                     case 5:
                         excludeList = DecodeCredentialIdList(reader);
                         break;
+                    case 6:
+                        credProtect = DecodeExtensions(reader);
+                        break;
                     case 7:
                         (residentKey, requireUserVerification) = DecodeOptions(reader);
                         break;
@@ -75,7 +79,26 @@ namespace VFido.Core.Device.Ctap2.Commands
             if (clientDataHash == null || rp == null || user == null || pubKeyCredParams is not { Count: > 0 })
                 throw new Ctap2Exception(Ctap2Constants.Ctap2ErrMissingParameter);
 
-            return new MakeCredentialRequest(clientDataHash, rp, user, pubKeyCredParams, pinUvAuthParam, pinUvAuthProtocol, residentKey, requireUserVerification, excludeList);
+            return new MakeCredentialRequest(clientDataHash, rp, user, pubKeyCredParams, pinUvAuthParam, pinUvAuthProtocol, residentKey, requireUserVerification, excludeList, credProtect);
+        }
+
+        /// <summary>Only the credProtect extension (CTAP2 §11.3) is understood; anything else is skipped.</summary>
+        private static int? DecodeExtensions(CborReader reader)
+        {
+            reader.ReadStartMap();
+            int? credProtect = null;
+
+            while (reader.PeekState() != CborReaderState.EndMap)
+            {
+                switch (reader.ReadTextString())
+                {
+                    case "credProtect": credProtect = reader.ReadInt32(); break;
+                    default: reader.SkipValue(); break;
+                }
+            }
+            reader.ReadEndMap();
+
+            return credProtect;
         }
 
         private static List<byte[]> DecodeCredentialIdList(CborReader reader)
