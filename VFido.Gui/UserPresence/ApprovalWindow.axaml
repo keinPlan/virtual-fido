@@ -12,23 +12,17 @@
         SystemDecorations="None">
     <Border CornerRadius="12"
             Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-            BorderBrush="#3A6FF7" BorderThickness="1"
+            BorderBrush="#232634" BorderThickness="1"
             ClipToBounds="True">
         <Grid RowDefinitions="Auto,*,Auto">
 
             <!-- Header banner -->
-            <Border Grid.Row="0" Padding="16,14">
-                <Border.Background>
-                    <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
-                        <GradientStop Color="#3A6FF7" Offset="0"/>
-                        <GradientStop Color="#7A3AF7" Offset="1"/>
-                    </LinearGradientBrush>
-                </Border.Background>
+            <Border Grid.Row="0" Padding="16,14" Background="#232634">
                 <StackPanel Orientation="Horizontal" Spacing="10">
                     <TextBlock Text="🔐" FontSize="24" VerticalAlignment="Center"/>
                     <StackPanel VerticalAlignment="Center" Spacing="1">
-                        <TextBlock Text="Security key request" FontWeight="Bold" FontSize="15" Foreground="White"/>
-                        <TextBlock x:Name="DeviceText" FontSize="11" Foreground="#E4E9FF"/>
+                        <TextBlock Text="Security key request" FontWeight="SemiBold" FontSize="15" Foreground="White"/>
+                        <TextBlock x:Name="DeviceText" FontSize="11" Foreground="#B7BDD1"/>
                     </StackPanel>
                 </StackPanel>
             </Border>
@@ -39,13 +33,15 @@
                 <Border Background="{DynamicResource SystemControlBackgroundListLowBrush}" CornerRadius="6" Padding="10,6">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <TextBlock Text="🌐" FontSize="13" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="RpText" FontSize="12" Foreground="Gray" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="RpText" FontSize="12" FontWeight="Medium"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                                   TextWrapping="Wrap" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Border>
 
                 <StackPanel Spacing="4">
                     <ProgressBar x:Name="CountdownBar" Height="4" Minimum="0" CornerRadius="2"
-                                 Foreground="#3A6FF7" BorderThickness="0"/>
+                                 Foreground="#FF7A1A" BorderThickness="0"/>
                     <TextBlock x:Name="CountdownText" Foreground="Gray" FontSize="11" HorizontalAlignment="Right"/>
                 </StackPanel>
             </StackPanel>
@@ -56,8 +52,8 @@
                 <Button Content="Approve" Width="100" Click="Approve_Click" IsDefault="True" CornerRadius="6">
                     <Button.Background>
                         <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
-                            <GradientStop Color="#3A6FF7" Offset="0"/>
-                            <GradientStop Color="#7A3AF7" Offset="1"/>
+                            <GradientStop Color="#FFA83A" Offset="0"/>
+                            <GradientStop Color="#FF6A00" Offset="1"/>
                         </LinearGradientBrush>
                     </Button.Background>
                     <Button.Foreground>White</Button.Foreground>

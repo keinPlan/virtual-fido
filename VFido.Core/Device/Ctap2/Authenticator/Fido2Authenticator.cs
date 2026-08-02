@@ -58,7 +58,7 @@ namespace VFido.Core.Device.Ctap2.Authenticator
             var credProtect = request.CredProtect is >= 1 and <= 3 ? request.CredProtect.Value : 1;
             var userVerified = RequireUserVerification(request.RequireUserVerification, request.PinUvAuthParam, request.ClientDataHash, forceUv: credProtect == 3);
 
-            if (!_presence.RequestApproval($"Register a new key for {request.RelyingParty.Id}", request.RelyingParty.Id))
+            if (!_presence.RequestApproval("Register a new key", request.RelyingParty.Id))
                 throw new Ctap2Exception(Ctap2Constants.Ctap2ErrOperationDenied);
 
             var registration = await _secrets.CreateCredentialAsync(
@@ -136,7 +136,7 @@ namespace VFido.Core.Device.Ctap2.Authenticator
             // up=false is a silent credential probe (e.g. WebAuthn conditional mediation/autofill
             // discovery): the platform just wants to know whether a matching credential exists, and
             // must not see any prompt for it. Only gate on user presence for a real (up=true) request.
-            if (request.RequireUserPresence && !_presence.RequestApproval($"Sign in to {request.RpId}", request.RpId))
+            if (request.RequireUserPresence && !_presence.RequestApproval("Sign in", request.RpId))
                 throw new Ctap2Exception(Ctap2Constants.Ctap2ErrOperationDenied);
 
             // numberOfCredentials is only reported in this first response (per CTAP2 6.2), but
