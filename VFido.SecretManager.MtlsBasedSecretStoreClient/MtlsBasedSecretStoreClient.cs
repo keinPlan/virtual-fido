@@ -103,6 +103,19 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreClient
             return response.Signature;
         }
 
+        public async Task<IReadOnlyList<byte[]>> GetAttestationCertificateChainAsync()
+        {
+            var response = await PostAsync<object?, GetAttestationCertificateChainResponse>(SecretManagerRoutes.GetAttestationCertificate, null).ConfigureAwait(false);
+            return response.CertificateChainDer;
+        }
+
+        public async Task<byte[]> SignWithAttestationKeyAsync(byte[] data)
+        {
+            var request = new SignWithAttestationKeyRequest(data);
+            var response = await PostAsync<SignWithAttestationKeyRequest, SignWithAttestationKeyResponse>(SecretManagerRoutes.SignWithAttestationKey, request).ConfigureAwait(false);
+            return response.Signature;
+        }
+
         private async Task<TResponse> PostAsync<TRequest, TResponse>(string route, TRequest body)
         {
             await EnsureLoggedInAsync().ConfigureAwait(false);

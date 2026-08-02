@@ -10,5 +10,19 @@ namespace VFido.SecretManager
     {
         ISigningKey CreateEs256Key();
         ISigningKey LoadKey(byte[] handle);
+
+        /// <summary>
+        /// Returns this authenticator's attestation key/certificate chain, generating and
+        /// persisting a self-signed root CA and a leaf certificate it issues on first call.
+        /// Stable across calls: every MakeCredential attests with the same chain, the way a real
+        /// authenticator's batch attestation certificate would.
+        /// </summary>
+        AttestationCertificate GetOrCreateAttestationCertificate();
     }
+
+    /// <summary>
+    /// A persisted leaf attestation key handle (loadable via <see cref="IKeyStore.LoadKey"/>) paired
+    /// with its DER certificate chain, leaf first followed by the issuing root CA.
+    /// </summary>
+    public sealed record AttestationCertificate(byte[] KeyHandle, IReadOnlyList<byte[]> CertificateChainDer);
 }

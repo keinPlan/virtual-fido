@@ -24,4 +24,9 @@ namespace VFido.SecretManager
 
     public sealed record SignRequest(byte[] CredentialId, byte[] Data);
     public sealed record SignResponse(byte[] Signature);
+
+    public sealed record GetAttestationCertificateChainResponse(IReadOnlyList<byte[]> CertificateChainDer);
+
+    public sealed record SignWithAttestationKeyRequest(byte[] Data);
+    public sealed record SignWithAttestationKeyResponse(byte[] Signature);
 }

@@ -236,11 +236,16 @@ namespace VFido.Core.Device.Ctap2.Commands
             writer.WriteByteString(result.AuthenticatorData);
 
             writer.WriteInt32(3); // attStmt
-            writer.WriteStartMap(2);
+            writer.WriteStartMap(3);
             writer.WriteTextString("alg");
             writer.WriteInt32(result.Algorithm);
             writer.WriteTextString("sig");
             writer.WriteByteString(result.Signature);
+            writer.WriteTextString("x5c");
+            writer.WriteStartArray(result.AttestationCertificateChainDer.Count);
+            foreach (var certificateDer in result.AttestationCertificateChainDer)
+                writer.WriteByteString(certificateDer);
+            writer.WriteEndArray();
             writer.WriteEndMap();
 
             writer.WriteEndMap();

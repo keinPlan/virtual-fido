@@ -81,6 +81,15 @@ namespace VFido.SecretManager
             return Task.FromResult(_keys.LoadKey(credential.KeyHandle).Sign(data));
         }
 
+        public Task<IReadOnlyList<byte[]>> GetAttestationCertificateChainAsync() =>
+            Task.FromResult(_keys.GetOrCreateAttestationCertificate().CertificateChainDer);
+
+        public Task<byte[]> SignWithAttestationKeyAsync(byte[] data)
+        {
+            var attestation = _keys.GetOrCreateAttestationCertificate();
+            return Task.FromResult(_keys.LoadKey(attestation.KeyHandle).Sign(data));
+        }
+
         private StoredCredential RequireCredential(byte[] credentialId) =>
             _credentials.Find(credentialId) ?? throw new InvalidOperationException("Unknown credential.");
 

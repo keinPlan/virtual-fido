@@ -12,5 +12,7 @@ namespace VFido.SecretManager
         public const string DeleteCredential = "/api/secretmanager/credentials/delete";
         public const string IncrementSignCount = "/api/secretmanager/credentials/increment-sign-count";
         public const string Sign = "/api/secretmanager/credentials/sign";
+        public const string GetAttestationCertificate = "/api/secretmanager/attestation/certificate";
+        public const string SignWithAttestationKey = "/api/secretmanager/attestation/sign";
     }
 }

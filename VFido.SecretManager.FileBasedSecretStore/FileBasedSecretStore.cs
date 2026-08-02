@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using VFido.SecretManager.Crypto;
 
 namespace VFido.SecretManager.FileBasedSecretStore
 {
@@ -15,6 +16,12 @@ namespace VFido.SecretManager.FileBasedSecretStore
         private const string SaltFileName = "salt.bin";
         private const string KeyFileExtension = ".key";
         private const string PinStateFileName = "pin.bin";
+        private const string AttestationKeyFileName = "attestation.key";
+        private const string AttestationCertFileName = "attestation.crt";
+        private const string AttestationIntermediateKeyFileName = "attestation-intermediate.key";
+        private const string AttestationIntermediateCertFileName = "attestation-intermediate.crt";
+        private const string AttestationRootKeyFileName = "attestation-root.key";
+        private const string AttestationRootCertFileName = "attestation-root.crt";
 
         private readonly string _directory;
         private readonly byte[] _aesKey;
@@ -54,6 +61,81 @@ namespace VFido.SecretManager.FileBasedSecretStore
             return new FileBasedSigningKey(ecdsa, keyId);
         }
 
+        /// <summary>
+        /// Builds a self-signed root, an intermediate the root issues, and a leaf the intermediate
+        /// issues, each generated and persisted lazily (only the first missing link and everything
+        /// above it). Only the leaf and intermediate are returned - the root is the trust anchor
+        /// and never goes into x5c, so nothing outside this class ever needs its DER.
+        /// </summary>
+        public AttestationCertificate GetOrCreateAttestationCertificate()
+        {
+            var intermediateCertDer = GetOrCreateIntermediateCert();
+
+            var leafCertPath = Path.Combine(_directory, AttestationCertFileName);
+            var leafKeyPath = KeyFilePath(AttestationKeyGuid);
+
+            if (File.Exists(leafCertPath) && File.Exists(leafKeyPath))
+                return new AttestationCertificate(AttestationKeyHandle, new[] { File.ReadAllBytes(leafCertPath), intermediateCertDer });
+
+            using var intermediateKey = LoadPrivateKey(Path.Combine(_directory, AttestationIntermediateKeyFileName));
+            var leafKey = Crypto.EcdsaProvider.GenerateP256();
+            var leafCertDer = AttestationCertificateFactory.CreateAttestationLeaf(leafKey, intermediateKey, intermediateCertDer);
+
+            File.WriteAllBytes(leafKeyPath, AesKeyProtector.Encrypt(_aesKey, leafKey.ExportPkcs8PrivateKey()));
+            File.WriteAllBytes(leafCertPath, leafCertDer);
+
+            return new AttestationCertificate(AttestationKeyHandle, new[] { leafCertDer, intermediateCertDer });
+        }
+
+        private byte[] GetOrCreateIntermediateCert()
+        {
+            var intermediateCertPath = Path.Combine(_directory, AttestationIntermediateCertFileName);
+            if (File.Exists(intermediateCertPath))
+                return File.ReadAllBytes(intermediateCertPath);
+
+            var rootCertDer = GetOrCreateRootCert();
+            using var rootKey = LoadPrivateKey(Path.Combine(_directory, AttestationRootKeyFileName));
+
+            var intermediateKey = Crypto.EcdsaProvider.GenerateP256();
+            var intermediateCertDer = AttestationCertificateFactory.CreateIntermediate(intermediateKey, rootKey, rootCertDer);
+
+            File.WriteAllBytes(Path.Combine(_directory, AttestationIntermediateKeyFileName), AesKeyProtector.Encrypt(_aesKey, intermediateKey.ExportPkcs8PrivateKey()));
+            File.WriteAllBytes(intermediateCertPath, intermediateCertDer);
+
+            return intermediateCertDer;
+        }
+
+        private byte[] GetOrCreateRootCert()
+        {
+            var rootCertPath = Path.Combine(_directory, AttestationRootCertFileName);
+            if (File.Exists(rootCertPath))
+                return File.ReadAllBytes(rootCertPath);
+
+            var rootKey = Crypto.EcdsaProvider.GenerateP256();
+            var rootCertDer = AttestationCertificateFactory.CreateSelfSignedRoot(rootKey);
+
+            File.WriteAllBytes(Path.Combine(_directory, AttestationRootKeyFileName), AesKeyProtector.Encrypt(_aesKey, rootKey.ExportPkcs8PrivateKey()));
+            File.WriteAllBytes(rootCertPath, rootCertDer);
+
+            return rootCertDer;
+        }
+
+        private ECDsa LoadPrivateKey(string path)
+        {
+            var plaintext = AesKeyProtector.Decrypt(_aesKey, File.ReadAllBytes(path));
+            var ecdsa = ECDsa.Create();
+            ecdsa.ImportPkcs8PrivateKey(plaintext, out _);
+            return ecdsa;
+        }
+
+        /// <summary>
+        /// Fixed handle for the leaf attestation key, distinguishing it from the random
+        /// per-credential Guids <see cref="CreateEs256Key"/> hands out so <see cref="LoadKey"/> can
+        /// route to the fixed <see cref="AttestationKeyFileName"/> instead of a "{guid}.key" file.
+        /// </summary>
+        private static readonly Guid AttestationKeyGuid = new("00000000-0000-0000-0000-000000000001");
+        private static byte[] AttestationKeyHandle => AttestationKeyGuid.ToByteArray();
+
         public PinState? Load()
         {
             var path = Path.Combine(_directory, PinStateFileName);
@@ -71,7 +153,9 @@ namespace VFido.SecretManager.FileBasedSecretStore
             File.WriteAllBytes(Path.Combine(_directory, PinStateFileName), encrypted);
         }
 
-        private string KeyFilePath(Guid keyId) => Path.Combine(_directory, keyId + KeyFileExtension);
+        private string KeyFilePath(Guid keyId) => keyId == AttestationKeyGuid
+            ? Path.Combine(_directory, AttestationKeyFileName)
+            : Path.Combine(_directory, keyId + KeyFileExtension);
 
         private byte[] LoadOrCreateSalt()
         {

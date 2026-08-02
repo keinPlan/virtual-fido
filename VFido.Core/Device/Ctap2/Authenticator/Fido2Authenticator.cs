@@ -69,11 +69,14 @@ namespace VFido.Core.Device.Ctap2.Authenticator
             var authenticatorData = AuthenticatorDataBuilder.BuildWithAttestedCredential(
                 request.RelyingParty.Id, _aaguid, registration.CredentialId, registration.CosePublicKey, signCount: 0, userVerified, extensions);
 
-            // Self-attestation: sign with the credential's own key rather than a separate batch
-            // attestation certificate, so no x5c is included in the response's attStmt.
-            var signature = await _secrets.SignAsync(registration.CredentialId, Combine(authenticatorData, request.ClientDataHash));
+            // Batch attestation: sign with this stick's self-signed attestation key (shared across
+            // all its credentials) rather than the credential's own key, so the response's attStmt
+            // carries a verifiable x5c chain (leaf + issuing CA) instead of falling back to
+            // self-attestation.
+            var attestationCertificateChain = await _secrets.GetAttestationCertificateChainAsync();
+            var signature = await _secrets.SignWithAttestationKeyAsync(Combine(authenticatorData, request.ClientDataHash));
 
-            return new MakeCredentialResult(authenticatorData, registration.CoseAlgorithm, signature);
+            return new MakeCredentialResult(authenticatorData, registration.CoseAlgorithm, signature, attestationCertificateChain);
         }
 
         public async Task<GetAssertionResult> GetAssertionAsync(GetAssertionRequest request)

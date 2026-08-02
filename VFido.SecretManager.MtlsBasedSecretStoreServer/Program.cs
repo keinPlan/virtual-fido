@@ -78,6 +78,12 @@ api.MapPost(SecretManagerRoutes.IncrementSignCount, async (IncrementSignCountReq
 api.MapPost(SecretManagerRoutes.Sign, async (SignRequest request, IFido2SecretManager manager) =>
     Results.Ok(new SignResponse(await manager.SignAsync(request.CredentialId, request.Data))));
 
+api.MapPost(SecretManagerRoutes.GetAttestationCertificate, async (IFido2SecretManager manager) =>
+    Results.Ok(new GetAttestationCertificateChainResponse(await manager.GetAttestationCertificateChainAsync())));
+
+api.MapPost(SecretManagerRoutes.SignWithAttestationKey, async (SignWithAttestationKeyRequest request, IFido2SecretManager manager) =>
+    Results.Ok(new SignWithAttestationKeyResponse(await manager.SignWithAttestationKeyAsync(request.Data))));
+
 app.Run();
 
 static bool ValidateClientCertificate(X509Certificate2 certificate, X509Certificate2 ca)

@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using VFido.SecretManager.Crypto;
 
 namespace VFido.SecretManager.MemoryBasedSecretStore
 {
@@ -9,6 +10,8 @@ namespace VFido.SecretManager.MemoryBasedSecretStore
     /// </summary>
     public class MemoryBasedSecretStore : IKeyStore
     {
+        private AttestationCertificate? _attestationCertificate;
+
         public ISigningKey CreateEs256Key() => new MemoryBasedSigningKey(Crypto.EcdsaProvider.GenerateP256());
 
         public ISigningKey LoadKey(byte[] handle)
@@ -16,6 +19,24 @@ namespace VFido.SecretManager.MemoryBasedSecretStore
             var ecdsa = ECDsa.Create();
             ecdsa.ImportPkcs8PrivateKey(handle, out _);
             return new MemoryBasedSigningKey(ecdsa);
+        }
+
+        public AttestationCertificate GetOrCreateAttestationCertificate()
+        {
+            if (_attestationCertificate != null)
+                return _attestationCertificate;
+
+            using var rootKey = Crypto.EcdsaProvider.GenerateP256();
+            var rootCertDer = AttestationCertificateFactory.CreateSelfSignedRoot(rootKey);
+
+            using var intermediateKey = Crypto.EcdsaProvider.GenerateP256();
+            var intermediateCertDer = AttestationCertificateFactory.CreateIntermediate(intermediateKey, rootKey, rootCertDer);
+
+            var leafKey = Crypto.EcdsaProvider.GenerateP256();
+            var leafCertDer = AttestationCertificateFactory.CreateAttestationLeaf(leafKey, intermediateKey, intermediateCertDer);
+
+            _attestationCertificate = new AttestationCertificate(leafKey.ExportPkcs8PrivateKey(), new[] { leafCertDer, intermediateCertDer });
+            return _attestationCertificate;
         }
     }
 }

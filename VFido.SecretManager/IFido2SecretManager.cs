@@ -35,5 +35,11 @@ namespace VFido.SecretManager
 
         /// <summary>Signs <paramref name="data"/> (typically authenticatorData || clientDataHash) with the credential's key.</summary>
         Task<byte[]> SignAsync(byte[] credentialId, byte[] data);
+
+        /// <summary>The DER-encoded certificate chain (leaf attestation certificate, then its issuing root CA) to embed as x5c in a "packed" attestation statement.</summary>
+        Task<IReadOnlyList<byte[]>> GetAttestationCertificateChainAsync();
+
+        /// <summary>Signs <paramref name="data"/> (typically authenticatorData || clientDataHash) with the leaf attestation key backing <see cref="GetAttestationCertificateChainAsync"/>.</summary>
+        Task<byte[]> SignWithAttestationKeyAsync(byte[] data);
     }
 }
