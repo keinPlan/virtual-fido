@@ -28,7 +28,7 @@ namespace VFido.Core.Device.Ctap2
             {
                 return command switch
                 {
-                    Ctap2Constants.AuthenticatorGetInfo => Prepend(Ctap2Constants.Ctap2Ok, GetInfoCommand.Handle(authenticator.IsPinSet)),
+                    Ctap2Constants.AuthenticatorGetInfo => Prepend(Ctap2Constants.Ctap2Ok, GetInfoCommand.Handle(authenticator.IsPinSet, authenticator.Aaguid)),
                     Ctap2Constants.AuthenticatorMakeCredential => Prepend(Ctap2Constants.Ctap2Ok, await MakeCredentialCommand.Handle(body, authenticator)),
                     Ctap2Constants.AuthenticatorGetAssertion => Prepend(Ctap2Constants.Ctap2Ok, await GetAssertionCommand.Handle(body, authenticator)),
                     Ctap2Constants.AuthenticatorClientPin => Prepend(Ctap2Constants.Ctap2Ok, await ClientPinCommand.Handle(body, authenticator)),

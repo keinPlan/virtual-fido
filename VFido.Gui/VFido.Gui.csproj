@@ -37,6 +37,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\VFido.Core\VFido.Core.csproj" />
+    <ProjectReference Include="..\VFido.SecretManager.FileBasedSecretStore\VFido.SecretManager.FileBasedSecretStore.csproj" />
+    <ProjectReference Include="..\VFido.SecretManager.MtlsBasedSecretStoreClient\VFido.SecretManager.MtlsBasedSecretStoreClient.csproj" />
   </ItemGroup>
 
 </Project>

@@ -9,9 +9,13 @@ namespace VFido.Core.Device.Ctap2.Commands
     /// <summary>authenticatorClientPIN (0x06), CTAP2 section 6.5. PIN/UV Auth Protocol One only.</summary>
     internal static class ClientPinCommand
     {
+        private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
+
         internal static async Task<byte[]> Handle(byte[] body, IAuthenticator authenticator)
         {
             var request = Decode(body);
+            Logger.Debug(() => $"authenticatorClientPIN subCommand={request.SubCommand} pinProtocol={request.PinProtocol}");
+
             var result = await authenticator.ClientPinAsync(request);
             return Encode(result);
         }

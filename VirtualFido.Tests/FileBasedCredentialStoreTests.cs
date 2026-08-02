@@ -1,0 +1,96 @@
+using VFido.SecretManager;
+using VFido.SecretManager.FileBasedSecretStore;
+using Xunit;
+
+namespace VirtualFido.Tests
+{
+    public class FileBasedCredentialStoreTests : IDisposable
+    {
+        private readonly string _directory = Path.Combine(Path.GetTempPath(), "vfido-tests-credstore-" + Guid.NewGuid());
+
+        public void Dispose()
+        {
+            if (Directory.Exists(_directory))
+                Directory.Delete(_directory, recursive: true);
+        }
+
+        private static StoredCredential NewCredential(byte[]? credentialId = null) => new()
+        {
+            CredentialId = credentialId ?? Guid.NewGuid().ToByteArray(),
+            RpId = "example.com",
+            UserId = new byte[] { 1, 2, 3 },
+            KeyHandle = new byte[] { 4, 5, 6 },
+            IsResident = true,
+            UserName = "alice",
+            UserDisplayName = "Alice",
+        };
+
+        [Fact]
+        public void Save_ThenFind_RoundTripsTheCredential()
+        {
+            var store = new FileBasedCredentialStore(_directory, "user", "pass");
+            var credential = NewCredential();
+
+            store.Save(credential);
+            var found = store.Find(credential.CredentialId);
+
+            Assert.NotNull(found);
+            Assert.Equal(credential.RpId, found!.RpId);
+            Assert.Equal(credential.UserId, found.UserId);
+            Assert.Equal(credential.UserName, found.UserName);
+            Assert.True(found.IsResident);
+        }
+
+        [Fact]
+        public void Find_UnknownCredentialId_ReturnsNull()
+        {
+            var store = new FileBasedCredentialStore(_directory, "user", "pass");
+
+            Assert.Null(store.Find(Guid.NewGuid().ToByteArray()));
+        }
+
+        [Fact]
+        public void FindByRp_ReturnsOnlyMatchingCredentials()
+        {
+            var store = new FileBasedCredentialStore(_directory, "user", "pass");
+            var forExampleCom = NewCredential();
+            var forOther = new StoredCredential
+            {
+                CredentialId = Guid.NewGuid().ToByteArray(),
+                RpId = "other.com",
+                UserId = new byte[] { 9 },
+                KeyHandle = new byte[] { 9 },
+            };
+
+            store.Save(forExampleCom);
+            store.Save(forOther);
+
+            var results = store.FindByRp("example.com");
+
+            Assert.Single(results);
+            Assert.Equal(forExampleCom.CredentialId, results[0].CredentialId);
+        }
+
+        [Fact]
+        public void NewStoreInstance_WithSameCredentials_CanStillDecryptPreviouslySavedCredential()
+        {
+            var credential = NewCredential();
+            new FileBasedCredentialStore(_directory, "user", "pass").Save(credential);
+
+            var reopened = new FileBasedCredentialStore(_directory, "user", "pass");
+            var found = reopened.Find(credential.CredentialId);
+
+            Assert.NotNull(found);
+            Assert.Equal(credential.RpId, found!.RpId);
+        }
+
+        [Fact]
+        public void NewStoreInstance_WithWrongPassword_ThrowsImmediatelyOnConstruction()
+        {
+            var credential = NewCredential();
+            new FileBasedCredentialStore(_directory, "user", "pass").Save(credential);
+
+            Assert.Throws<InvalidCredentialsException>(() => new FileBasedCredentialStore(_directory, "user", "wrong-pass"));
+        }
+    }
+}

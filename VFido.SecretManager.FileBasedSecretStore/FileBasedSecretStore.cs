@@ -23,8 +23,11 @@ namespace VFido.SecretManager.FileBasedSecretStore
             _directory = directory;
             Directory.CreateDirectory(_directory);
 
+            var isNewStore = !File.Exists(Path.Combine(_directory, SaltFileName));
             var salt = LoadOrCreateSalt();
             _aesKey = AesKeyProtector.DeriveKey(username, password, salt);
+
+            PasswordVerifier.EnsureOrVerify(_directory, _aesKey, isNewStore);
         }
 
         public ISigningKey CreateEs256Key()

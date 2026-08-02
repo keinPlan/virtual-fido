@@ -5,6 +5,8 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Microsoft.Extensions.DependencyInjection;
+using VFido.Gui.Configuration;
+using VFido.Gui.Dialogs;
 using VFido.Gui.Services;
 
 namespace VFido.Gui;
@@ -37,6 +39,8 @@ public partial class App : Application
     private static ServiceProvider BuildServiceProvider()
     {
         var services = new ServiceCollection();
+        services.AddSingleton<IStickConfigStore, StickConfigStore>();
+        services.AddSingleton<ICredentialPrompt, WindowCredentialPrompt>();
         services.AddSingleton<IStickManager, StickManager>();
         services.AddTransient<MainWindow>();
         return services.BuildServiceProvider();

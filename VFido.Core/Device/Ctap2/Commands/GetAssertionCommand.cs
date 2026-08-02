@@ -9,9 +9,14 @@ namespace VFido.Core.Device.Ctap2.Commands
     /// <summary>authenticatorGetAssertion (0x02), CTAP2 section 6.2.</summary>
     internal static class GetAssertionCommand
     {
+        private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
+
         internal static async Task<byte[]> Handle(byte[] body, IAuthenticator authenticator)
         {
             var request = Decode(body);
+            Logger.Debug(() => $"authenticatorGetAssertion rpId={request.RpId} allowListCount={request.AllowList.Count} " +
+                $"uv={request.RequireUserVerification} up={request.RequireUserPresence}");
+
             var result = await authenticator.GetAssertionAsync(request);
             return Encode(result);
         }

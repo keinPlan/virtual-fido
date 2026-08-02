@@ -17,6 +17,8 @@ namespace VFido.Core.Device.Ctap2.Authenticator
         private readonly IFido2SecretManager _secrets;
         private readonly IUserPresenceGate _presence;
         private readonly PinManager _pin = new();
+        private readonly byte[] _aaguid;
+        private readonly PinUsagePreference _pinUsage;
 
         // authenticatorGetNextAssertion session state: the remaining discoverable credentials
         // (beyond the one already returned by GetAssertion) for the most recent RP/request.
@@ -26,13 +28,17 @@ namespace VFido.Core.Device.Ctap2.Authenticator
         private byte[]? _pendingClientDataHash;
         private bool _pendingUserVerified;
 
-        internal Fido2Authenticator(IFido2SecretManager secrets, IUserPresenceGate? presence = null)
+        internal Fido2Authenticator(IFido2SecretManager secrets, byte[] aaguid, PinUsagePreference pinUsage, IUserPresenceGate? presence = null)
         {
             _secrets = secrets;
+            _aaguid = aaguid;
+            _pinUsage = pinUsage;
             _presence = presence ?? AlwaysApproveUserPresenceGate.Instance;
         }
 
         public bool IsPinSet => _pin.IsPinSet;
+        public byte[] Aaguid => _aaguid;
+        public PinUsagePreference PinUsage => _pinUsage;
 
         public async Task<MakeCredentialResult> MakeCredentialAsync(MakeCredentialRequest request)
         {
@@ -57,7 +63,7 @@ namespace VFido.Core.Device.Ctap2.Authenticator
                 request.RelyingParty.Id, request.User.Id, request.User.Name, request.User.DisplayName, request.RequireResidentKey);
 
             var authenticatorData = AuthenticatorDataBuilder.BuildWithAttestedCredential(
-                request.RelyingParty.Id, AuthenticatorAaguid.Bytes, registration.CredentialId, registration.CosePublicKey, signCount: 0, userVerified);
+                request.RelyingParty.Id, _aaguid, registration.CredentialId, registration.CosePublicKey, signCount: 0, userVerified);
 
             // Self-attestation: sign with the credential's own key rather than a separate batch
             // attestation certificate, so no x5c is included in the response's attStmt.
@@ -169,7 +175,17 @@ namespace VFido.Core.Device.Ctap2.Authenticator
         /// </summary>
         private bool RequireUserVerification(bool uvRequested, byte[]? pinUvAuthParam, byte[] clientDataHash)
         {
-            Logger.Debug(() => $"UV negotiation: uvRequested={uvRequested} pinIsSet={_pin.IsPinSet} pinUvAuthParamPresent={pinUvAuthParam != null} pinUvAuthParamLen={pinUvAuthParam?.Length ?? -1}");
+            // pin_usage overrides what the platform actually asked for: Always forces UV even for
+            // requests that didn't set options.uv; Avoid never insists on it even if they did. A
+            // pinUvAuthParam the platform sends unprompted is still honored either way below.
+            uvRequested = _pinUsage switch
+            {
+                PinUsagePreference.Always => true,
+                PinUsagePreference.Avoid => false,
+                _ => uvRequested,
+            };
+
+            Logger.Debug(() => $"UV negotiation: uvRequested={uvRequested} pinUsage={_pinUsage} pinIsSet={_pin.IsPinSet} pinUvAuthParamPresent={pinUvAuthParam != null} pinUvAuthParamLen={pinUvAuthParam?.Length ?? -1}");
 
             // CTAP2 6.1/6.2: a zero-length pinUvAuthParam is the platform probing whether it
             // needs to run ClientPIN before it can satisfy UV here, without committing to it.

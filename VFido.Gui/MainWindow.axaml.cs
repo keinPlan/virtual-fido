@@ -1,6 +1,9 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using VFido.Gui.Configuration;
 using VFido.Gui.Dialogs;
 using VFido.Gui.Services;
 
@@ -9,15 +12,17 @@ namespace VFido.Gui;
 public partial class MainWindow : Window
 {
     private readonly IStickManager _stickManager;
+    private readonly IStickConfigStore _configStore;
 
     private bool _allowClose;
 
-    public MainWindow(IStickManager stickManager)
+    public MainWindow(IStickManager stickManager, IStickConfigStore configStore)
     {
         _stickManager = stickManager;
+        _configStore = configStore;
 
         InitializeComponent();
-        Opened += async (_, _) => await OnOpenedAsync();
+        Opened += (_, _) => RefreshStickList();
         Closing += MainWindow_Closing;
     }
 
@@ -53,17 +58,86 @@ public partial class MainWindow : Window
             BeginMoveDrag(e);
     }
 
-    private async Task OnOpenedAsync()
+    private void RefreshStickList()
     {
-        var results = await _stickManager.StartAsync();
-        foreach (var result in results)
-            await ReportAttachResultAsync(result);
+        StickListPanel.Children.Clear();
+
+        var sticks = _stickManager.GetConfiguredSticks();
+        if (sticks.Count == 0)
+        {
+            StickListPanel.Children.Add(new TextBlock
+            {
+                Text = "No sticks configured yet. Click \"+ Add stick\" to create one.",
+                Foreground = Brushes.Gray,
+            });
+            return;
+        }
+
+        foreach (var stick in sticks)
+            StickListPanel.Children.Add(BuildStickCard(stick));
     }
 
-    private async void Attach_Click(object? sender, RoutedEventArgs e)
+    private Control BuildStickCard(StickConfig stick)
     {
-        var result = await _stickManager.AttachAsync("1-1");
+        var connected = _stickManager.IsConnected(stick.Id);
+
+        var infoPanel = new StackPanel { Spacing = 2 };
+        infoPanel.Children.Add(new TextBlock { Text = stick.Name, FontWeight = FontWeight.SemiBold });
+        infoPanel.Children.Add(new TextBlock
+        {
+            Text = $"{stick.SerialNumberIdentifier}  ·  {stick.SecretManager.GetType().Name.Replace("SecretManagerConfig", string.Empty)}  ·  {(connected ? "Connected" : "Disconnected")}",
+            Foreground = Brushes.Gray,
+            FontSize = 12,
+        });
+
+        var editButton = new Button { Content = "Edit", Margin = new Avalonia.Thickness(0, 0, 8, 0) };
+        editButton.Click += async (_, _) => await EditStickAsync(stick);
+
+        var connectButton = new Button { Content = connected ? "Disconnect" : "Connect", Width = 100 };
+        connectButton.Click += async (_, _) => await ToggleConnectAsync(stick, connected);
+
+        var buttonsPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        buttonsPanel.Children.Add(editButton);
+        buttonsPanel.Children.Add(connectButton);
+
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        Grid.SetColumn(infoPanel, 0);
+        Grid.SetColumn(buttonsPanel, 1);
+        grid.Children.Add(infoPanel);
+        grid.Children.Add(buttonsPanel);
+
+        return new Border
+        {
+            Padding = new Avalonia.Thickness(12),
+            CornerRadius = new Avalonia.CornerRadius(6),
+            BorderBrush = Brushes.Gray,
+            BorderThickness = new Avalonia.Thickness(1),
+            Child = grid,
+        };
+    }
+
+    private async void AddStick_Click(object? sender, RoutedEventArgs e)
+    {
+        var created = await AddStickWindow.ShowAsync(this, _configStore);
+        if (created != null)
+            RefreshStickList();
+    }
+
+    private async Task EditStickAsync(StickConfig stick)
+    {
+        var edited = await AddStickWindow.EditAsync(this, _configStore, stick);
+        if (edited != null)
+            RefreshStickList();
+    }
+
+    private async Task ToggleConnectAsync(StickConfig stick, bool wasConnected)
+    {
+        var result = wasConnected
+            ? await _stickManager.DisconnectAsync(stick.Id)
+            : await _stickManager.ConnectAsync(stick.Id);
+
         await ReportAttachResultAsync(result);
+        RefreshStickList();
     }
 
     private async Task ReportAttachResultAsync(StickAttachResult result)
@@ -71,12 +145,11 @@ public partial class MainWindow : Window
         switch (result.Outcome)
         {
             case StickAttachOutcome.Success:
+            case StickAttachOutcome.Cancelled:
                 break;
             case StickAttachOutcome.UnsupportedPlatform:
-                StatusText.Text = result.Error;
-                break;
             case StickAttachOutcome.Failed:
-                await MessageWindow.ShowAsync(this, "VirtualFido", $"Failed to attach device {result.Busid}: {result.Error}");
+                await MessageWindow.ShowAsync(this, "VirtualFido", result.Error ?? "The operation failed.");
                 break;
         }
     }

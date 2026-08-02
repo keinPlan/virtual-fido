@@ -27,8 +27,10 @@
         </Border>
 
         <Grid Grid.Row="1" Margin="16" RowDefinitions="Auto,*">
-            <Button Grid.Row="0" Content="Attach device" Click="Attach_Click" HorizontalAlignment="Left"/>
-            <TextBlock x:Name="StatusText" Grid.Row="1" Margin="0,16,0,0" TextWrapping="Wrap"/>
+            <Button Grid.Row="0" Content="+ Add stick" Click="AddStick_Click" HorizontalAlignment="Left" Margin="0,0,0,12"/>
+            <ScrollViewer Grid.Row="1">
+                <StackPanel x:Name="StickListPanel" Spacing="8"/>
+            </ScrollViewer>
         </Grid>
     </Grid>
 </Window>

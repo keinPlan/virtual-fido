@@ -22,13 +22,21 @@ namespace VFido.Core.Device
         private readonly Ctap2.Authenticator.IAuthenticator _authenticator;
 
         public FidoUsbStick(int deviceID,
+            string? serialNumber = null,
+            byte[]? aaguid = null,
+            Ctap2.Authenticator.Pin.PinUsagePreference pinUsage = Ctap2.Authenticator.Pin.PinUsagePreference.Prefer,
             Ctap2.Authenticator.IUserPresenceGate? presenceGate = null,
             IFido2SecretManager? secretManager = null) : base(deviceID)
         {
+            serialNumber ??= "VFIDO-" + deviceID.ToString("X8");
+            aaguid ??= DefaultAaguid(deviceID);
+
             _authenticator = new Ctap2.Authenticator.Fido2Authenticator(
                 secretManager ?? new Fido2SecretManager(
                     new VFido.SecretManager.MemoryBasedSecretStore.MemoryBasedSecretStore(),
                     new VFido.SecretManager.MemoryBasedSecretStore.InMemoryCredentialStore()),
+                aaguid,
+                pinUsage,
                 presenceGate);
 
             base.UsbDescriptor_Device = new UsbTypes.USB_DEVICE_DESCRIPTOR()
@@ -49,7 +57,7 @@ namespace VFido.Core.Device
 
             UsbDescriptor_Strings.Add(1, new UsbTypes.USB_STRING_DESCRIPTOR("Virtual Security"));
             UsbDescriptor_Strings.Add(2, new UsbTypes.USB_STRING_DESCRIPTOR("VFIDO Security Key"));
-            UsbDescriptor_Strings.Add(3, new UsbTypes.USB_STRING_DESCRIPTOR("VFIDO-" + deviceID.ToString("X8")));
+            UsbDescriptor_Strings.Add(3, new UsbTypes.USB_STRING_DESCRIPTOR(serialNumber));
             UsbDescriptor_Strings.Add(4, new UsbTypes.USB_STRING_DESCRIPTOR("CTAP2 HID"));
 
             base.UsbDescriptors_Configurations = new UsbTypes.USB_CONFIGURATION[]
@@ -113,6 +121,14 @@ namespace VFido.Core.Device
                      },
                  }
             };
+        }
+
+        /// <summary>Deterministic 16-byte AAGUID fallback for callers (mainly tests) that don't configure a real per-stick identity.</summary>
+        private static byte[] DefaultAaguid(int deviceID)
+        {
+            var bytes = new byte[16];
+            BitConverter.GetBytes(deviceID).CopyTo(bytes, 0);
+            return bytes;
         }
 
         protected override async Task HandleCtapMessage(uint cid, byte cmd, byte[] payload)

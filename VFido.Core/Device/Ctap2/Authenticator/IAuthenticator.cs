@@ -1,3 +1,4 @@
+using VFido.Core.Device.Ctap2.Authenticator.Pin;
 using VFido.Core.Device.Ctap2.Model;
 
 namespace VFido.Core.Device.Ctap2.Authenticator
@@ -6,6 +7,8 @@ namespace VFido.Core.Device.Ctap2.Authenticator
     internal interface IAuthenticator
     {
         bool IsPinSet { get; }
+        byte[] Aaguid { get; }
+        PinUsagePreference PinUsage { get; }
 
         Task<MakeCredentialResult> MakeCredentialAsync(MakeCredentialRequest request);
         Task<GetAssertionResult> GetAssertionAsync(GetAssertionRequest request);

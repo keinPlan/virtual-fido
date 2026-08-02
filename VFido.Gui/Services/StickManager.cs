@@ -1,8 +1,14 @@
+using System.Security.Cryptography.X509Certificates;
 using NLog;
 using VFido.Core;
 using VFido.Core.Device;
 using VFido.Core.Vhci;
+using VFido.Gui.Configuration;
 using VFido.Gui.UserPresence;
+using VFido.SecretManager;
+using VFido.SecretManager.FileBasedSecretStore;
+using VFido.SecretManager.MemoryBasedSecretStore;
+using VFido.SecretManager.MtlsBasedSecretStoreClient;
 
 namespace VFido.Gui.Services;
 
@@ -11,41 +17,165 @@ public sealed class StickManager : IStickManager
     private const string UnsupportedPlatformMessage =
         "Automatic device attach is only supported on Windows for now. Use a platform-specific usbip client to attach manually.";
 
-    private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
-    private static readonly int[] DeviceIds = { 0x00010001 /*, 0x00010002, 0x00010003, 0x00010004 */ };
-
     private const string Host = "127.0.0.1";
     private const int Port = 3240;
 
+    private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
+
+    private readonly IStickConfigStore _configStore;
+    private readonly ICredentialPrompt _credentialPrompt;
     private readonly UsbIpServer _server = new(Host, Port);
-    private bool _started;
+    private readonly Dictionary<Guid, ConnectedStick> _connected = new();
 
-    public async Task<IReadOnlyList<StickAttachResult>> StartAsync()
+    private bool _serverStarted;
+    private int _nextDeviceSlot = 1;
+
+    public StickManager(IStickConfigStore configStore, ICredentialPrompt credentialPrompt)
     {
-        if (_started)
-            return Array.Empty<StickAttachResult>();
-
-        _started = true;
-
-        var devices = new List<FidoUsbStick>();
-        foreach (var deviceId in DeviceIds)
-        {
-            var gate = new AvaloniaUserPresenceGate($"VFIDO-{deviceId:X8}");
-            var device = new FidoUsbStick(deviceId, gate);
-            _server.VirtualUsbDevices.Add(deviceId, device);
-            devices.Add(device);
-        }
-
-        _server.Start();
-
-        var results = new List<StickAttachResult>(devices.Count);
-        foreach (var device in devices)
-            results.Add(await AttachAsync($"{device.DeviceBusNum}-{device.DeviceBusID}"));
-
-        return results;
+        _configStore = configStore;
+        _credentialPrompt = credentialPrompt;
     }
 
-    public Task<StickAttachResult> AttachAsync(string busid)
+    public IReadOnlyList<StickConfig> GetConfiguredSticks() => _configStore.LoadAll();
+
+    public bool IsConnected(Guid stickId) => _connected.ContainsKey(stickId);
+
+    public async Task<StickAttachResult> ConnectAsync(Guid stickId)
+    {
+        if (_connected.ContainsKey(stickId))
+            return new StickAttachResult(StickAttachOutcome.Success, string.Empty, null);
+
+        // Only one stick may be attached at a time - connecting a new one disconnects whatever
+        // else is currently attached first, so the host never sees more than one virtual key.
+        foreach (var otherStickId in _connected.Keys.Where(id => id != stickId).ToList())
+            await DisconnectAsync(otherStickId);
+
+        var config = _configStore.LoadAll().FirstOrDefault(c => c.Id == stickId);
+        if (config == null)
+            return new StickAttachResult(StickAttachOutcome.Failed, string.Empty, $"No stored config for stick {stickId}.");
+
+        IFido2SecretManager secretManager;
+        try
+        {
+            var built = await BuildSecretManagerAsync(config);
+            if (built == null)
+                return new StickAttachResult(StickAttachOutcome.Cancelled, string.Empty, null);
+
+            secretManager = built;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn(ex, () => $"Failed to build secret manager for stick {stickId}: {ex.Message}");
+            return new StickAttachResult(StickAttachOutcome.Failed, string.Empty, ex.Message);
+        }
+
+        var deviceId = (0x0001 << 16) | _nextDeviceSlot++;
+        var device = new FidoUsbStick(
+            deviceId,
+            config.SerialNumberIdentifier,
+            config.Aaguid.ToByteArray(),
+            config.PinUsage,
+            new AvaloniaUserPresenceGate(config.Name),
+            secretManager);
+
+        _server.VirtualUsbDevices.Add(deviceId, device);
+
+        if (!_serverStarted)
+        {
+            _server.Start();
+            _serverStarted = true;
+        }
+
+        var busid = $"{device.DeviceBusNum}-{device.DeviceBusID}";
+        var result = await AttachAsync(busid);
+
+        if (!result.Success)
+        {
+            _server.VirtualUsbDevices.Remove(deviceId);
+            (secretManager as IDisposable)?.Dispose();
+            return result;
+        }
+
+        _connected[stickId] = new ConnectedStick(device, deviceId, result.Port, secretManager);
+        return result;
+    }
+
+    public Task<StickAttachResult> DisconnectAsync(Guid stickId)
+    {
+        if (!_connected.TryGetValue(stickId, out var connectedStick))
+            return Task.FromResult(new StickAttachResult(StickAttachOutcome.Success, string.Empty, null));
+
+        var vhci = new VhciAttacher();
+        var busid = $"{connectedStick.Device.DeviceBusNum}-{connectedStick.Device.DeviceBusID}";
+
+        StickAttachResult result;
+        if (connectedStick.Port is { } port && !vhci.TryDetach(port, out var error))
+        {
+            Logger.Warn($"Failed to detach busid={busid} port={port}: {error}");
+            result = new StickAttachResult(StickAttachOutcome.Failed, busid, error);
+        }
+        else
+        {
+            result = new StickAttachResult(StickAttachOutcome.Success, busid, null);
+        }
+
+        _server.VirtualUsbDevices.Remove(connectedStick.DeviceId);
+        (connectedStick.SecretManager as IDisposable)?.Dispose();
+        _connected.Remove(stickId);
+
+        return Task.FromResult(result);
+    }
+
+    private async Task<IFido2SecretManager?> BuildSecretManagerAsync(StickConfig config)
+    {
+        switch (config.SecretManager)
+        {
+            case MemorySecretManagerConfig:
+                return new Fido2SecretManager(new MemoryBasedSecretStore(), new InMemoryCredentialStore());
+
+            case FileSecretManagerConfig fileConfig:
+            {
+                var credentials = await _credentialPrompt.RequestCredentialsAsync(config.Name, fileConfig.Username);
+                if (credentials == null)
+                    return null;
+
+                var (username, password) = credentials.Value;
+                return new Fido2SecretManager(
+                    new SecretManager.FileBasedSecretStore.FileBasedSecretStore(_configStore.GetKeyStoreDirectory(config.Id), username, password),
+                    new FileBasedCredentialStore(_configStore.GetCredentialStoreDirectory(config.Id), username, password));
+            }
+
+            case MtlsSecretManagerConfig mtlsConfig:
+            {
+                var credentials = await _credentialPrompt.RequestCredentialsAsync(config.Name, mtlsConfig.Username);
+                if (credentials == null)
+                    return null;
+
+                var (username, password) = credentials.Value;
+                var stickDirectory = _configStore.GetStickDirectory(config.Id);
+                var clientCertificate = new X509Certificate2(
+                    ResolvePath(stickDirectory, mtlsConfig.ClientCertificatePath), mtlsConfig.ClientCertificatePassword);
+                var serverCaCertificate = new X509Certificate2(ResolvePath(stickDirectory, mtlsConfig.ServerCaCertificatePath));
+
+                return new MtlsBasedSecretStoreClient(new MtlsBasedSecretStoreClientOptions
+                {
+                    ServerBaseAddress = mtlsConfig.ServerBaseAddress,
+                    ClientCertificate = clientCertificate,
+                    ServerCaCertificate = serverCaCertificate,
+                    Username = username,
+                    Password = password,
+                });
+            }
+
+            default:
+                throw new NotSupportedException($"Unsupported secret manager config: {config.SecretManager.GetType().Name}");
+        }
+    }
+
+    private static string ResolvePath(string stickDirectory, string path) =>
+        Path.IsPathRooted(path) ? path : Path.Combine(stickDirectory, path);
+
+    private Task<StickAttachResult> AttachAsync(string busid)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -54,12 +184,14 @@ public sealed class StickManager : IStickManager
         }
 
         var vhci = new VhciAttacher();
-        if (!vhci.TryAttach(Host, Port.ToString(), busid, out _, out var error))
+        if (!vhci.TryAttach(Host, Port.ToString(), busid, out var port, out var error))
         {
             Logger.Warn($"Failed to attach busid={busid}: {error}");
             return Task.FromResult(new StickAttachResult(StickAttachOutcome.Failed, busid, error));
         }
 
-        return Task.FromResult(new StickAttachResult(StickAttachOutcome.Success, busid, null));
+        return Task.FromResult(new StickAttachResult(StickAttachOutcome.Success, busid, null) { Port = port });
     }
+
+    private sealed record ConnectedStick(FidoUsbStick Device, int DeviceId, int? Port, IFido2SecretManager SecretManager);
 }

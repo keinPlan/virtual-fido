@@ -1,5 +1,4 @@
 using System.Formats.Cbor;
-using VFido.Core.Device.Ctap2.Authenticator;
 
 namespace VFido.Core.Device.Ctap2.Commands
 {
@@ -9,8 +8,12 @@ namespace VFido.Core.Device.Ctap2.Commands
     /// </summary>
     internal static class GetInfoCommand
     {
-        internal static byte[] Handle(bool pinIsSet)
+        private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
+
+        internal static byte[] Handle(bool pinIsSet, byte[] aaguid)
         {
+            Logger.Debug(() => $"authenticatorGetInfo pinIsSet={pinIsSet} aaguid={Convert.ToHexString(aaguid)}");
+
             var writer = new CborWriter(CborConformanceMode.Ctap2Canonical);
 
             writer.WriteStartMap(8);
@@ -21,7 +24,7 @@ namespace VFido.Core.Device.Ctap2.Commands
             writer.WriteEndArray();
 
             writer.WriteInt32(Ctap2Constants.InfoKeyAaguid);
-            writer.WriteByteString(AuthenticatorAaguid.Bytes);
+            writer.WriteByteString(aaguid);
 
             writer.WriteInt32(Ctap2Constants.InfoKeyOptions);
             writer.WriteStartMap(3);

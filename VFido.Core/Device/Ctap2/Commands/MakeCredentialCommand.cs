@@ -10,9 +10,14 @@ namespace VFido.Core.Device.Ctap2.Commands
     /// <summary>authenticatorMakeCredential (0x01), CTAP2 section 6.1.</summary>
     internal static class MakeCredentialCommand
     {
+        private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
+
         internal static async Task<byte[]> Handle(byte[] body, IAuthenticator authenticator)
         {
             var request = Decode(body);
+            Logger.Debug(() => $"authenticatorMakeCredential rp={request.RelyingParty.Id} user={request.User.Name} " +
+                $"excludeListCount={request.ExcludeList?.Count ?? 0} rk={request.RequireResidentKey} uv={request.RequireUserVerification}");
+
             var result = await authenticator.MakeCredentialAsync(request);
             return Encode(result);
         }
