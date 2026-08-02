@@ -1,22 +1,39 @@
 using System;
 using System.Security.Cryptography;
 using VFido.Core.Device.Ctap2.Errors;
+using VFido.SecretManager;
 
 namespace VFido.Core.Device.Ctap2.Authenticator.Pin
 {
     /// <summary>
     /// PIN/UV Auth Protocol One state for one authenticator instance: the ephemeral key-agreement
-    /// keypair, the stored PIN hash, retry counter, and the current pinUvAuthToken. In-memory only
-    /// for now - resets on process restart, matching InMemoryCredentialStore's lifetime.
+    /// keypair, the stored PIN hash, retry counter, and the current pinUvAuthToken. The key-agreement
+    /// keypair and token are always session-only (CTAP2 expects a fresh handshake each time anyway);
+    /// the PIN hash and retry counter are persisted via the optional IPinStateStore, so a stick
+    /// backed by one (e.g. file-based) remembers its PIN across reconnects/restarts instead of
+    /// resetting every time like a purely in-memory stick does.
     /// </summary>
     internal class PinManager
     {
         private const int MaxRetries = 8;
 
+        private readonly IPinStateStore? _store;
+
         private ECDiffieHellman? _keyAgreementKey;
         private byte[]? _pinHash; // left 16 bytes of SHA-256(pin)
         private byte[]? _pinToken;
         private int _retries = MaxRetries;
+
+        internal PinManager(IPinStateStore? store = null)
+        {
+            _store = store;
+
+            if (_store?.Load() is { } saved)
+            {
+                _pinHash = saved.PinHash;
+                _retries = saved.Retries;
+            }
+        }
 
         internal bool IsPinSet => _pinHash != null;
         internal int Retries => _retries;
@@ -42,6 +59,7 @@ namespace VFido.Core.Device.Ctap2.Authenticator.Pin
 
             _pinHash = ComputePinHash(DecodePin(sharedSecret, newPinEnc));
             _retries = MaxRetries;
+            Persist();
         }
 
         internal void ChangePin(ECParameters platformPublicKey, byte[] pinUvAuthParam, byte[] newPinEnc, byte[] pinHashEnc)
@@ -54,6 +72,7 @@ namespace VFido.Core.Device.Ctap2.Authenticator.Pin
 
             _pinHash = ComputePinHash(DecodePin(sharedSecret, newPinEnc));
             _retries = MaxRetries;
+            Persist();
         }
 
         internal byte[] GetPinToken(ECParameters platformPublicKey, byte[] pinHashEnc)
@@ -64,6 +83,7 @@ namespace VFido.Core.Device.Ctap2.Authenticator.Pin
             VerifyPinHash(sharedSecret, pinHashEnc);
 
             _retries = MaxRetries;
+            Persist();
             _pinToken = RandomNumberGenerator.GetBytes(32);
             return PinProtocolOne.Encrypt(sharedSecret, _pinToken);
         }
@@ -103,11 +123,15 @@ namespace VFido.Core.Device.Ctap2.Authenticator.Pin
                 return;
 
             _retries--;
+            // Persisted immediately - a restart must not silently reset a locked-out PIN's retries.
+            Persist();
             // Force a fresh getKeyAgreement handshake before the next attempt, as CTAP2 requires.
             _keyAgreementKey?.Dispose();
             _keyAgreementKey = null;
             throw new Ctap2Exception(Ctap2Constants.Ctap2ErrPinInvalid);
         }
+
+        private void Persist() => _store?.Save(new PinState(_pinHash!, _retries));
 
         private void EnsurePinSetAndUnlocked()
         {

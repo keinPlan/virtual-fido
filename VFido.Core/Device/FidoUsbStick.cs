@@ -26,7 +26,8 @@ namespace VFido.Core.Device
             byte[]? aaguid = null,
             Ctap2.Authenticator.Pin.PinUsagePreference pinUsage = Ctap2.Authenticator.Pin.PinUsagePreference.Prefer,
             Ctap2.Authenticator.IUserPresenceGate? presenceGate = null,
-            IFido2SecretManager? secretManager = null) : base(deviceID)
+            IFido2SecretManager? secretManager = null,
+            IPinStateStore? pinStateStore = null) : base(deviceID)
         {
             serialNumber ??= "VFIDO-" + deviceID.ToString("X8");
             aaguid ??= DefaultAaguid(deviceID);
@@ -37,7 +38,8 @@ namespace VFido.Core.Device
                     new VFido.SecretManager.MemoryBasedSecretStore.InMemoryCredentialStore()),
                 aaguid,
                 pinUsage,
-                presenceGate);
+                presenceGate,
+                pinStateStore);
 
             base.UsbDescriptor_Device = new UsbTypes.USB_DEVICE_DESCRIPTOR()
             {

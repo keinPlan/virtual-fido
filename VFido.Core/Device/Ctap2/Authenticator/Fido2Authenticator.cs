@@ -16,7 +16,7 @@ namespace VFido.Core.Device.Ctap2.Authenticator
 
         private readonly IFido2SecretManager _secrets;
         private readonly IUserPresenceGate _presence;
-        private readonly PinManager _pin = new();
+        private readonly PinManager _pin;
         private readonly byte[] _aaguid;
         private readonly PinUsagePreference _pinUsage;
 
@@ -28,9 +28,10 @@ namespace VFido.Core.Device.Ctap2.Authenticator
         private byte[]? _pendingClientDataHash;
         private bool _pendingUserVerified;
 
-        internal Fido2Authenticator(IFido2SecretManager secrets, byte[] aaguid, PinUsagePreference pinUsage, IUserPresenceGate? presence = null)
+        internal Fido2Authenticator(IFido2SecretManager secrets, byte[] aaguid, PinUsagePreference pinUsage, IUserPresenceGate? presence = null, IPinStateStore? pinStateStore = null)
         {
             _secrets = secrets;
+            _pin = new PinManager(pinStateStore);
             _aaguid = aaguid;
             _pinUsage = pinUsage;
             _presence = presence ?? AlwaysApproveUserPresenceGate.Instance;
@@ -186,6 +187,17 @@ namespace VFido.Core.Device.Ctap2.Authenticator
             };
 
             Logger.Debug(() => $"UV negotiation: uvRequested={uvRequested} pinUsage={_pinUsage} pinIsSet={_pin.IsPinSet} pinUvAuthParamPresent={pinUvAuthParam != null} pinUvAuthParamLen={pinUvAuthParam?.Length ?? -1}");
+
+            // Avoid means never make the platform go through ClientPIN - not even the zero-length
+            // probe, and not the "PIN is set, so a pinUvAuthParam is mandatory" branch below, which
+            // otherwise applies unconditionally once a PIN exists regardless of pin_usage. Only a
+            // pinUvAuthParam the platform actually included (non-empty) is still honored, since we
+            // can't refuse valid proof it chose to send anyway.
+            if (_pinUsage == PinUsagePreference.Avoid && pinUvAuthParam is not { Length: > 0 })
+            {
+                Logger.Debug(() => "pin_usage=Avoid and no real pinUvAuthParam supplied - proceeding without UV");
+                return false;
+            }
 
             // CTAP2 6.1/6.2: a zero-length pinUvAuthParam is the platform probing whether it
             // needs to run ClientPIN before it can satisfy UV here, without committing to it.

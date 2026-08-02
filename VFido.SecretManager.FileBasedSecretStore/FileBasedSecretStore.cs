@@ -9,11 +9,12 @@ namespace VFido.SecretManager.FileBasedSecretStore
     /// password (never persisted) are. Losing either makes every key file permanently
     /// unrecoverable, matching the TPM-backed stores this seam is meant to also support.
     /// </summary>
-    public class FileBasedSecretStore : IKeyStore
+    public class FileBasedSecretStore : IKeyStore, IPinStateStore
     {
         private const int SaltSize = 16;
         private const string SaltFileName = "salt.bin";
         private const string KeyFileExtension = ".key";
+        private const string PinStateFileName = "pin.bin";
 
         private readonly string _directory;
         private readonly byte[] _aesKey;
@@ -51,6 +52,23 @@ namespace VFido.SecretManager.FileBasedSecretStore
             var ecdsa = ECDsa.Create();
             ecdsa.ImportPkcs8PrivateKey(plaintext, out _);
             return new FileBasedSigningKey(ecdsa, keyId);
+        }
+
+        public PinState? Load()
+        {
+            var path = Path.Combine(_directory, PinStateFileName);
+            if (!File.Exists(path))
+                return null;
+
+            var plaintext = AesKeyProtector.Decrypt(_aesKey, File.ReadAllBytes(path));
+            return System.Text.Json.JsonSerializer.Deserialize<PinState>(plaintext);
+        }
+
+        public void Save(PinState state)
+        {
+            var plaintext = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(state);
+            var encrypted = AesKeyProtector.Encrypt(_aesKey, plaintext);
+            File.WriteAllBytes(Path.Combine(_directory, PinStateFileName), encrypted);
         }
 
         private string KeyFilePath(Guid keyId) => Path.Combine(_directory, keyId + KeyFileExtension);
