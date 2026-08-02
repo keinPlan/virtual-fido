@@ -2,20 +2,67 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="VFido.Gui.UserPresence.ApprovalWindow"
         Title="Security key request"
-        Width="360" Height="220"
+        Width="380" Height="260"
         CanResize="False"
         WindowStartupLocation="CenterScreen"
         Topmost="True"
-        ShowInTaskbar="True">
-    <Grid Margin="16" RowDefinitions="Auto,Auto,Auto,*,Auto">
-        <TextBlock x:Name="DeviceText" Grid.Row="0" FontWeight="Bold" FontSize="14" Margin="0,0,0,8" TextWrapping="Wrap"/>
-        <TextBlock x:Name="OperationText" Grid.Row="1" TextWrapping="Wrap" Margin="0,0,0,4"/>
-        <TextBlock x:Name="RpText" Grid.Row="2" Foreground="Gray" TextWrapping="Wrap" Margin="0,0,0,8"/>
-        <TextBlock x:Name="CountdownText" Grid.Row="3" Foreground="Gray" VerticalAlignment="Top"/>
+        ShowInTaskbar="True"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        SystemDecorations="None">
+    <Border CornerRadius="12"
+            Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+            BorderBrush="#3A6FF7" BorderThickness="1"
+            ClipToBounds="True">
+        <Grid RowDefinitions="Auto,*,Auto">
 
-        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0" Spacing="8">
-            <Button Content="Deny" Width="80" Click="Deny_Click"/>
-            <Button Content="Approve" Width="80" Click="Approve_Click" IsDefault="True"/>
-        </StackPanel>
-    </Grid>
+            <!-- Header banner -->
+            <Border Grid.Row="0" Padding="16,14">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                        <GradientStop Color="#3A6FF7" Offset="0"/>
+                        <GradientStop Color="#7A3AF7" Offset="1"/>
+                    </LinearGradientBrush>
+                </Border.Background>
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Text="🔐" FontSize="24" VerticalAlignment="Center"/>
+                    <StackPanel VerticalAlignment="Center" Spacing="1">
+                        <TextBlock Text="Security key request" FontWeight="Bold" FontSize="15" Foreground="White"/>
+                        <TextBlock x:Name="DeviceText" FontSize="11" Foreground="#E4E9FF"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Body -->
+            <StackPanel Grid.Row="1" Margin="16,14" Spacing="10">
+                <TextBlock x:Name="OperationText" FontSize="14" FontWeight="Medium" TextWrapping="Wrap"/>
+                <Border Background="{DynamicResource SystemControlBackgroundListLowBrush}" CornerRadius="6" Padding="10,6">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="🌐" FontSize="13" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="RpText" FontSize="12" Foreground="Gray" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+
+                <StackPanel Spacing="4">
+                    <ProgressBar x:Name="CountdownBar" Height="4" Minimum="0" CornerRadius="2"
+                                 Foreground="#3A6FF7" BorderThickness="0"/>
+                    <TextBlock x:Name="CountdownText" Foreground="Gray" FontSize="11" HorizontalAlignment="Right"/>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- Actions -->
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16,0,16,16" Spacing="8">
+                <Button Content="Deny" Width="90" Click="Deny_Click" CornerRadius="6"/>
+                <Button Content="Approve" Width="100" Click="Approve_Click" IsDefault="True" CornerRadius="6">
+                    <Button.Background>
+                        <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                            <GradientStop Color="#3A6FF7" Offset="0"/>
+                            <GradientStop Color="#7A3AF7" Offset="1"/>
+                        </LinearGradientBrush>
+                    </Button.Background>
+                    <Button.Foreground>White</Button.Foreground>
+                </Button>
+            </StackPanel>
+        </Grid>
+    </Border>
 </Window>

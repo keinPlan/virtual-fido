@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 
@@ -16,6 +17,11 @@ public partial class ApprovalWindow : Window
     public ApprovalWindow()
     {
         InitializeComponent();
+        PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+                BeginMoveDrag(e);
+        };
     }
 
     public ApprovalWindow(string deviceLabel, string operation, string rpId) : this()
@@ -24,17 +30,21 @@ public partial class ApprovalWindow : Window
         OperationText.Text = operation;
         RpText.Text = rpId;
 
+        CountdownBar.Maximum = TimeoutSeconds;
+        CountdownBar.Value = _secondsLeft;
+
         _timer.Tick += (_, _) =>
         {
             _secondsLeft--;
-            CountdownText.Text = $"Expires in {_secondsLeft}s";
+            CountdownBar.Value = _secondsLeft;
+            CountdownText.Text = $"Auto-deny in {_secondsLeft}s";
             if (_secondsLeft <= 0)
             {
                 _timer.Stop();
                 CloseWithResult(false);
             }
         };
-        CountdownText.Text = $"Expires in {_secondsLeft}s";
+        CountdownText.Text = $"Auto-deny in {_secondsLeft}s";
         _timer.Start();
     }
 
