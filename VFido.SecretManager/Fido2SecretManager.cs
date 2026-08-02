@@ -54,6 +54,15 @@ namespace VFido.SecretManager
         public Task<IReadOnlyList<CredentialInfo>> FindResidentCredentialsAsync(string rpId) =>
             Task.FromResult<IReadOnlyList<CredentialInfo>>(_credentials.FindByRp(rpId).Where(c => c.IsResident).Select(ToInfo).ToList());
 
+        public Task<IReadOnlyList<CredentialInfo>> FindAllCredentialsAsync() =>
+            Task.FromResult<IReadOnlyList<CredentialInfo>>(_credentials.FindAll().Select(ToInfo).ToList());
+
+        public Task DeleteCredentialAsync(byte[] credentialId)
+        {
+            _credentials.Delete(credentialId);
+            return Task.CompletedTask;
+        }
+
         public Task<uint> IncrementSignCountAsync(byte[] credentialId)
         {
             var credential = RequireCredential(credentialId);

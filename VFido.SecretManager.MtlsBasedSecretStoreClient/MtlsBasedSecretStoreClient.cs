@@ -77,6 +77,18 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreClient
             return response.Credentials;
         }
 
+        public async Task<IReadOnlyList<CredentialInfo>> FindAllCredentialsAsync()
+        {
+            var response = await PostAsync<object?, FindAllCredentialsResponse>(SecretManagerRoutes.FindAllCredentials, null).ConfigureAwait(false);
+            return response.Credentials;
+        }
+
+        public async Task DeleteCredentialAsync(byte[] credentialId)
+        {
+            var request = new DeleteCredentialRequest(credentialId);
+            await PostAsync<DeleteCredentialRequest, DeleteCredentialResponse>(SecretManagerRoutes.DeleteCredential, request).ConfigureAwait(false);
+        }
+
         public async Task<uint> IncrementSignCountAsync(byte[] credentialId)
         {
             var request = new IncrementSignCountRequest(credentialId);

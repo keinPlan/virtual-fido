@@ -63,6 +63,15 @@ api.MapPost(SecretManagerRoutes.FindCredential, async (FindCredentialRequest req
 api.MapPost(SecretManagerRoutes.FindResidentCredentials, async (FindResidentCredentialsRequest request, IFido2SecretManager manager) =>
     Results.Ok(new FindResidentCredentialsResponse(await manager.FindResidentCredentialsAsync(request.RpId))));
 
+api.MapPost(SecretManagerRoutes.FindAllCredentials, async (IFido2SecretManager manager) =>
+    Results.Ok(new FindAllCredentialsResponse(await manager.FindAllCredentialsAsync())));
+
+api.MapPost(SecretManagerRoutes.DeleteCredential, async (DeleteCredentialRequest request, IFido2SecretManager manager) =>
+{
+    await manager.DeleteCredentialAsync(request.CredentialId);
+    return Results.Ok(new DeleteCredentialResponse());
+});
+
 api.MapPost(SecretManagerRoutes.IncrementSignCount, async (IncrementSignCountRequest request, IFido2SecretManager manager) =>
     Results.Ok(new IncrementSignCountResponse(await manager.IncrementSignCountAsync(request.CredentialId))));
 

@@ -24,6 +24,12 @@ namespace VFido.SecretManager
         /// <summary>All discoverable (resident) credentials for an RP, for allowList-less authenticatorGetAssertion.</summary>
         Task<IReadOnlyList<CredentialInfo>> FindResidentCredentialsAsync(string rpId);
 
+        /// <summary>Every credential stored on this authenticator, across all RPs - metadata only, for a management UI.</summary>
+        Task<IReadOnlyList<CredentialInfo>> FindAllCredentialsAsync();
+
+        /// <summary>Permanently removes a stored credential (and its key handle) from this authenticator.</summary>
+        Task DeleteCredentialAsync(byte[] credentialId);
+
         /// <summary>Increments and persists the credential's signature counter, returning the new value to embed in authenticatorData.</summary>
         Task<uint> IncrementSignCountAsync(byte[] credentialId);
 

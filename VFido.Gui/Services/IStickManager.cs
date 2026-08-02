@@ -1,4 +1,5 @@
 using VFido.Gui.Configuration;
+using VFido.SecretManager;
 
 namespace VFido.Gui.Services;
 
@@ -32,4 +33,13 @@ public interface IStickManager
     Task<StickAttachResult> ConnectAsync(Guid stickId);
 
     Task<StickAttachResult> DisconnectAsync(Guid stickId);
+
+    /// <summary>
+    /// Metadata-only view of every credential stored on a currently connected stick. Never
+    /// exposes key handles or private key material. Throws if the stick isn't connected.
+    /// </summary>
+    Task<IReadOnlyList<CredentialInfo>> GetCredentialsAsync(Guid stickId);
+
+    /// <summary>Permanently deletes a stored credential from a currently connected stick.</summary>
+    Task DeleteCredentialAsync(Guid stickId, byte[] credentialId);
 }

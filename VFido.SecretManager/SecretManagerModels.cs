@@ -14,6 +14,11 @@ namespace VFido.SecretManager
     public sealed record FindResidentCredentialsRequest(string RpId);
     public sealed record FindResidentCredentialsResponse(IReadOnlyList<CredentialInfo> Credentials);
 
+    public sealed record FindAllCredentialsResponse(IReadOnlyList<CredentialInfo> Credentials);
+
+    public sealed record DeleteCredentialRequest(byte[] CredentialId);
+    public sealed record DeleteCredentialResponse();
+
     public sealed record IncrementSignCountRequest(byte[] CredentialId);
     public sealed record IncrementSignCountResponse(uint SignCount);
 

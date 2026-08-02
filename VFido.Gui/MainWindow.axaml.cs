@@ -81,8 +81,21 @@ public partial class MainWindow : Window
     {
         var connected = _stickManager.IsConnected(stick.Id);
 
+        var statusDot = new Avalonia.Controls.Shapes.Ellipse
+        {
+            Width = 10,
+            Height = 10,
+            Fill = connected ? Brushes.LimeGreen : Brushes.DimGray,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Avalonia.Thickness(0, 0, 8, 0),
+        };
+
+        var namePanel = new StackPanel { Orientation = Orientation.Horizontal };
+        namePanel.Children.Add(statusDot);
+        namePanel.Children.Add(new TextBlock { Text = stick.Name, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+
         var infoPanel = new StackPanel { Spacing = 2 };
-        infoPanel.Children.Add(new TextBlock { Text = stick.Name, FontWeight = FontWeight.SemiBold });
+        infoPanel.Children.Add(namePanel);
         infoPanel.Children.Add(new TextBlock
         {
             Text = $"{stick.SerialNumberIdentifier}  ·  {stick.SecretManager.GetType().Name.Replace("SecretManagerConfig", string.Empty)}  ·  {(connected ? "Connected" : "Disconnected")}",
@@ -93,11 +106,15 @@ public partial class MainWindow : Window
         var editButton = new Button { Content = "Edit", Margin = new Avalonia.Thickness(0, 0, 8, 0) };
         editButton.Click += async (_, _) => await EditStickAsync(stick);
 
+        var credentialsButton = new Button { Content = "Credentials", Margin = new Avalonia.Thickness(0, 0, 8, 0), IsEnabled = connected };
+        credentialsButton.Click += async (_, _) => await CredentialsWindow.ShowAsync(this, _stickManager, stick);
+
         var connectButton = new Button { Content = connected ? "Disconnect" : "Connect", Width = 100 };
         connectButton.Click += async (_, _) => await ToggleConnectAsync(stick, connected);
 
         var buttonsPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         buttonsPanel.Children.Add(editButton);
+        buttonsPanel.Children.Add(credentialsButton);
         buttonsPanel.Children.Add(connectButton);
 
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };

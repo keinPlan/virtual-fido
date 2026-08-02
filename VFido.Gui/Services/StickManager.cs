@@ -128,6 +128,17 @@ public sealed class StickManager : IStickManager
         return Task.FromResult(result);
     }
 
+    public Task<IReadOnlyList<CredentialInfo>> GetCredentialsAsync(Guid stickId) =>
+        RequireConnected(stickId).SecretManager.FindAllCredentialsAsync();
+
+    public Task DeleteCredentialAsync(Guid stickId, byte[] credentialId) =>
+        RequireConnected(stickId).SecretManager.DeleteCredentialAsync(credentialId);
+
+    private ConnectedStick RequireConnected(Guid stickId) =>
+        _connected.TryGetValue(stickId, out var connectedStick)
+            ? connectedStick
+            : throw new InvalidOperationException($"Stick {stickId} is not connected.");
+
     private async Task<(IFido2SecretManager SecretManager, IPinStateStore? PinStateStore)?> BuildSecretManagerAsync(StickConfig config)
     {
         switch (config.SecretManager)

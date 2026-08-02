@@ -17,6 +17,10 @@ namespace VFido.SecretManager.MemoryBasedSecretStore
         public IReadOnlyList<StoredCredential> FindByRp(string rpId) =>
             _byId.Values.Where(c => c.RpId == rpId).ToList();
 
+        public IReadOnlyList<StoredCredential> FindAll() => _byId.Values.ToList();
+
+        public void Delete(byte[] credentialId) => _byId.Remove(Key(credentialId));
+
         private static string Key(byte[] credentialId) => Convert.ToBase64String(credentialId);
     }
 }

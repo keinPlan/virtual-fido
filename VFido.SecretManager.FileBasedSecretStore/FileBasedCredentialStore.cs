@@ -48,10 +48,19 @@ namespace VFido.SecretManager.FileBasedSecretStore
         }
 
         public IReadOnlyList<StoredCredential> FindByRp(string rpId) =>
+            FindAll().Where(c => c.RpId == rpId).ToList();
+
+        public IReadOnlyList<StoredCredential> FindAll() =>
             Directory.EnumerateFiles(_directory, "*" + CredentialFileExtension)
                 .Select(path => Decode(File.ReadAllBytes(path)))
-                .Where(c => c.RpId == rpId)
                 .ToList();
+
+        public void Delete(byte[] credentialId)
+        {
+            var path = CredentialFilePath(credentialId);
+            if (File.Exists(path))
+                File.Delete(path);
+        }
 
         private StoredCredential Decode(byte[] encrypted)
         {
