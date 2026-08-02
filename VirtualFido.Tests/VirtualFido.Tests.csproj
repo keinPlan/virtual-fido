@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\VirtualFido\VirtualFido.csproj" />
+    <ProjectReference Include="..\VFido.Gui\VFido.Gui.csproj" />
   </ItemGroup>
 
 </Project>

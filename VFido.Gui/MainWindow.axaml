@@ -1,0 +1,34 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="VFido.Gui.MainWindow"
+        Icon="avares://VFido.Gui/Assets/VFido_Icon.png"
+        Title="VirtualFido"
+        Width="800" Height="450"
+        MinWidth="480" MinHeight="320"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="40"
+        TransparencyLevelHint="None">
+    <Grid RowDefinitions="40,*">
+        <Border Grid.Row="0"
+                Background="#232634"
+                Name="TitleBar"
+                PointerPressed="TitleBar_PointerPressed">
+            <StackPanel Orientation="Horizontal"
+                        VerticalAlignment="Center"
+                        Margin="12,0,0,0"
+                        Spacing="8">
+                <Image Source="avares://VFido.Gui/Assets/VFido_Icon.png" Width="18" Height="18"/>
+                <TextBlock Text="VirtualFido"
+                           VerticalAlignment="Center"
+                           FontWeight="SemiBold"
+                           FontSize="13"
+                           Foreground="White"/>
+            </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="16" RowDefinitions="Auto,*">
+            <Button Grid.Row="0" Content="Attach device" Click="Attach_Click" HorizontalAlignment="Left"/>
+            <TextBlock x:Name="StatusText" Grid.Row="1" Margin="0,16,0,0" TextWrapping="Wrap"/>
+        </Grid>
+    </Grid>
+</Window>
