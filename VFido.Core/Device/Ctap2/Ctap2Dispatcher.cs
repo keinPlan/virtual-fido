@@ -14,7 +14,7 @@ namespace VFido.Core.Device.Ctap2
     {
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
-        internal static byte[] Handle(byte[] payload, IAuthenticator authenticator)
+        internal static async Task<byte[]> Handle(byte[] payload, IAuthenticator authenticator)
         {
             if (payload == null || payload.Length == 0)
                 return new[] { Ctap2Constants.Ctap2ErrInvalidCbor };
@@ -29,10 +29,10 @@ namespace VFido.Core.Device.Ctap2
                 return command switch
                 {
                     Ctap2Constants.AuthenticatorGetInfo => Prepend(Ctap2Constants.Ctap2Ok, GetInfoCommand.Handle(authenticator.IsPinSet)),
-                    Ctap2Constants.AuthenticatorMakeCredential => Prepend(Ctap2Constants.Ctap2Ok, MakeCredentialCommand.Handle(body, authenticator)),
-                    Ctap2Constants.AuthenticatorGetAssertion => Prepend(Ctap2Constants.Ctap2Ok, GetAssertionCommand.Handle(body, authenticator)),
-                    Ctap2Constants.AuthenticatorClientPin => Prepend(Ctap2Constants.Ctap2Ok, ClientPinCommand.Handle(body, authenticator)),
-                    Ctap2Constants.AuthenticatorGetNextAssertion => Prepend(Ctap2Constants.Ctap2Ok, GetNextAssertionCommand.Handle(authenticator)),
+                    Ctap2Constants.AuthenticatorMakeCredential => Prepend(Ctap2Constants.Ctap2Ok, await MakeCredentialCommand.Handle(body, authenticator)),
+                    Ctap2Constants.AuthenticatorGetAssertion => Prepend(Ctap2Constants.Ctap2Ok, await GetAssertionCommand.Handle(body, authenticator)),
+                    Ctap2Constants.AuthenticatorClientPin => Prepend(Ctap2Constants.Ctap2Ok, await ClientPinCommand.Handle(body, authenticator)),
+                    Ctap2Constants.AuthenticatorGetNextAssertion => Prepend(Ctap2Constants.Ctap2Ok, await GetNextAssertionCommand.Handle(authenticator)),
                     _ => LogUnknownCommand(command),
                 };
             }

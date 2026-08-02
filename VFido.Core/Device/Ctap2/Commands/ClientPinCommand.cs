@@ -1,18 +1,18 @@
 using System.Formats.Cbor;
 using VFido.Core.Device.Ctap2.Authenticator;
-using VFido.Core.Device.Ctap2.Authenticator.Crypto;
 using VFido.Core.Device.Ctap2.Errors;
 using VFido.Core.Device.Ctap2.Model;
+using VFido.SecretManager.Crypto;
 
 namespace VFido.Core.Device.Ctap2.Commands
 {
     /// <summary>authenticatorClientPIN (0x06), CTAP2 section 6.5. PIN/UV Auth Protocol One only.</summary>
     internal static class ClientPinCommand
     {
-        internal static byte[] Handle(byte[] body, IAuthenticator authenticator)
+        internal static async Task<byte[]> Handle(byte[] body, IAuthenticator authenticator)
         {
             var request = Decode(body);
-            var result = authenticator.ClientPin(request);
+            var result = await authenticator.ClientPinAsync(request);
             return Encode(result);
         }
 

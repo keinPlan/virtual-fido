@@ -7,9 +7,9 @@ namespace VFido.Core.Device.Ctap2.Authenticator
     {
         bool IsPinSet { get; }
 
-        MakeCredentialResult MakeCredential(MakeCredentialRequest request);
-        GetAssertionResult GetAssertion(GetAssertionRequest request);
-        GetAssertionResult GetNextAssertion();
-        ClientPinResult ClientPin(ClientPinRequest request);
+        Task<MakeCredentialResult> MakeCredentialAsync(MakeCredentialRequest request);
+        Task<GetAssertionResult> GetAssertionAsync(GetAssertionRequest request);
+        Task<GetAssertionResult> GetNextAssertionAsync();
+        Task<ClientPinResult> ClientPinAsync(ClientPinRequest request);
     }
 }

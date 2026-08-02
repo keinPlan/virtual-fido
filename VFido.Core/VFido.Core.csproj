@@ -22,4 +22,9 @@
     <InternalsVisibleTo Include="VirtualFido.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\VFido.SecretManager\VFido.SecretManager.csproj" />
+    <ProjectReference Include="..\VFido.SecretManager.MemoryBasedSecretStore\VFido.SecretManager.MemoryBasedSecretStore.csproj" />
+  </ItemGroup>
+
 </Project>

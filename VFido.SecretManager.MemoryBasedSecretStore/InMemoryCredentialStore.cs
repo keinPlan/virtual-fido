@@ -1,15 +1,11 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-
-namespace VFido.Core.Device.Ctap2.Authenticator
+namespace VFido.SecretManager.MemoryBasedSecretStore
 {
     /// <summary>
     /// Keeps credentials only for the process lifetime. Fine for M2 (non-resident keys the
     /// relying party gives back on every request); swap for a persisted store once Reset/
-    /// discoverable credentials are needed.
+    /// discoverable credentials need to survive a restart.
     /// </summary>
-    internal class InMemoryCredentialStore : ICredentialStore
+    public class InMemoryCredentialStore : ICredentialStore
     {
         private readonly Dictionary<string, StoredCredential> _byId = new();
 

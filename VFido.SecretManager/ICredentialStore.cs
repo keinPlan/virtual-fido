@@ -1,8 +1,6 @@
-using System.Collections.Generic;
-
-namespace VFido.Core.Device.Ctap2.Authenticator
+namespace VFido.SecretManager
 {
-    internal interface ICredentialStore
+    public interface ICredentialStore
     {
         void Save(StoredCredential credential);
         StoredCredential? Find(byte[] credentialId);

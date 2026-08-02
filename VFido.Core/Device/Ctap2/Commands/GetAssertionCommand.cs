@@ -9,10 +9,10 @@ namespace VFido.Core.Device.Ctap2.Commands
     /// <summary>authenticatorGetAssertion (0x02), CTAP2 section 6.2.</summary>
     internal static class GetAssertionCommand
     {
-        internal static byte[] Handle(byte[] body, IAuthenticator authenticator)
+        internal static async Task<byte[]> Handle(byte[] body, IAuthenticator authenticator)
         {
             var request = Decode(body);
-            var result = authenticator.GetAssertion(request);
+            var result = await authenticator.GetAssertionAsync(request);
             return Encode(result);
         }
 
@@ -140,7 +140,9 @@ namespace VFido.Core.Device.Ctap2.Commands
             {
                 // Only disclose name/displayName when the platform has to distinguish between
                 // multiple discoverable accounts for this RP; a single match keeps just the id.
-                var includeNames = result.NumberOfCredentials is > 1;
+                // This must stay true for every authenticatorGetNextAssertion in the sequence too,
+                // not just the first response (which is the only one carrying numberOfCredentials).
+                var includeNames = result.IncludeUserDetails;
                 writer.WriteInt32(4); // user
                 writer.WriteStartMap(includeNames ? 3 : 1);
                 writer.WriteTextString("id");

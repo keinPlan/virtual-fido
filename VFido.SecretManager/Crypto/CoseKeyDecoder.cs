@@ -1,13 +1,12 @@
 using System.Formats.Cbor;
 using System.Security.Cryptography;
-using VFido.Core.Device.Ctap2.Errors;
 
-namespace VFido.Core.Device.Ctap2.Authenticator.Crypto
+namespace VFido.SecretManager.Crypto
 {
     /// <summary>Decodes a COSE_Key EC2 public key (as sent by the platform in ClientPIN's keyAgreement field).</summary>
-    internal static class CoseKeyDecoder
+    public static class CoseKeyDecoder
     {
-        internal static ECParameters DecodePublicKey(CborReader reader)
+        public static ECParameters DecodePublicKey(CborReader reader)
         {
             reader.ReadStartMap();
 
@@ -24,7 +23,7 @@ namespace VFido.Core.Device.Ctap2.Authenticator.Crypto
             reader.ReadEndMap();
 
             if (x == null || y == null)
-                throw new Ctap2Exception(Ctap2Constants.Ctap2ErrMissingParameter);
+                throw new InvalidOperationException("COSE_Key is missing required EC2 coordinate (-2/-3).");
 
             return new ECParameters
             {

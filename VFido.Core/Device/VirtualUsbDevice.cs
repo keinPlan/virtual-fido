@@ -45,9 +45,9 @@ namespace VFido.Core.Device
             {
                 Logger.Trace(() => $"<< {usb_req.Header.Command:X2} {usb_req.Header.EndPoint:X2} {usb_req.Header.Seq:X8} {usb_req.TransferBufferLength:X8} {usb_req.Setup:X16} {BitConverter.ToString(usb_req?.Buffer?? new byte[0], 0, usb_req?.Buffer?.Length??0)}");
 
-                if (usb_req.Header.Command == 2) 
+                if (usb_req.Header.Command == 2)
                 {
-                    SendResponse(source, usb_req, new byte[0], 0, 0);
+                    HandleUnlink(source, usb_req);
                     return;
                 }
 
@@ -420,6 +420,36 @@ namespace VFido.Core.Device
             SendCtapResponseLocked(requestCid, CtapHidConstants.CTAPHID_INIT, response);
         }
 
+        /// <summary>
+        /// Handles USBIP_CMD_UNLINK (command 2): the host cancelling a previously submitted URB,
+        /// most commonly a stale CTAP IN poll it's about to replace with a fresh one. Without this,
+        /// the abandoned poll stayed in <see cref="_pendingInRequests"/> and could steal the next
+        /// real CTAP2 response meant for the host's current poll (FIFO match in
+        /// <see cref="SendCtapResponseLocked"/>), forcing the genuine poll to sit until it hit
+        /// <see cref="CtapInPollTimeoutMs"/> and the host retried - the exact "must wait ~4s" symptom
+        /// during PIN entry, which does several quick CTAP2 round trips while polling.
+        /// </summary>
+        private void HandleUnlink(IPacketSink source, USBIP_CMD_SUBMIT usb_req)
+        {
+            const int EConnReset = -104;
+
+            lock (_ctapLock)
+            {
+                for (var node = _pendingInRequests.First; node != null; node = node.Next)
+                {
+                    if (node.Value.usb_req.Header.Seq != usb_req.UnlinkSeqNum)
+                        continue;
+
+                    node.Value.timeout.Cancel();
+                    _pendingInRequests.Remove(node);
+                    SendResponse(node.Value.source, node.Value.usb_req, Array.Empty<byte>(), 0, EConnReset);
+                    break;
+                }
+            }
+
+            SendResponse(source, usb_req, Array.Empty<byte>(), 0, 0);
+        }
+
         private void HandleCtapInPoll(IPacketSink source, USBIP_CMD_SUBMIT usb_req)
         {
             lock (_ctapLock)
@@ -484,9 +514,10 @@ namespace VFido.Core.Device
         /// on an allocated channel. CTAPHID_INIT and CTAPHID_PING are handled generically above and never
         /// reach this hook. Default implementation replies with CTAPHID_ERROR(invalid command).
         /// </summary>
-        protected virtual void HandleCtapMessage(uint cid, byte cmd, byte[] payload)
+        protected virtual Task HandleCtapMessage(uint cid, byte cmd, byte[] payload)
         {
             SendCtapResponse(cid, CtapHidConstants.CTAPHID_ERROR, new[] { CtapHidConstants.CTAP1_ERR_INVALID_CMD });
+            return Task.CompletedTask;
         }
     }
 }

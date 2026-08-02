@@ -5,5 +5,6 @@ namespace VFido.Core.Device.Ctap2.Model
         byte[] AuthenticatorData,
         byte[] Signature,
         UserEntity? User = null,
-        int? NumberOfCredentials = null);
+        int? NumberOfCredentials = null,
+        bool IncludeUserDetails = false);
 }

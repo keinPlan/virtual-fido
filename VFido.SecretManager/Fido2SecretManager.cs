@@ -1,0 +1,76 @@
+using System.Security.Cryptography;
+
+namespace VFido.SecretManager
+{
+    /// <summary>
+    /// Default <see cref="IFido2SecretManager"/> implementation: composes a pluggable
+    /// <see cref="IKeyStore"/> (where key material actually lives) with a pluggable
+    /// <see cref="ICredentialStore"/> (where credential metadata + key handles are kept).
+    /// Neither store is ever exposed past this class. Both stores are in-process here, so every
+    /// method completes synchronously under the Task wrapper; a remote implementation of
+    /// IFido2SecretManager would await a network call instead.
+    /// </summary>
+    public sealed class Fido2SecretManager : IFido2SecretManager
+    {
+        private readonly IKeyStore _keys;
+        private readonly ICredentialStore _credentials;
+
+        public Fido2SecretManager(IKeyStore keys, ICredentialStore credentials)
+        {
+            _keys = keys;
+            _credentials = credentials;
+        }
+
+        public Task<CredentialRegistration> CreateCredentialAsync(string rpId, byte[] userId, string userName, string userDisplayName, bool isResident)
+        {
+            var key = _keys.CreateEs256Key();
+            var credentialId = RandomNumberGenerator.GetBytes(32);
+
+            _credentials.Save(new StoredCredential
+            {
+                CredentialId = credentialId,
+                RpId = rpId,
+                UserId = userId,
+                KeyHandle = key.ExportHandle(),
+                SignCount = 0,
+                IsResident = isResident,
+                UserName = userName,
+                UserDisplayName = userDisplayName,
+            });
+
+            return Task.FromResult(new CredentialRegistration(credentialId, key.ExportCosePublicKey(), key.CoseAlgorithm));
+        }
+
+        public Task<bool> CredentialExistsAsync(byte[] credentialId, string rpId) =>
+            Task.FromResult(_credentials.Find(credentialId) is { } credential && credential.RpId == rpId);
+
+        public Task<CredentialInfo?> FindCredentialAsync(byte[] credentialId, string rpId)
+        {
+            var credential = _credentials.Find(credentialId);
+            return Task.FromResult(credential != null && credential.RpId == rpId ? ToInfo(credential) : null);
+        }
+
+        public Task<IReadOnlyList<CredentialInfo>> FindResidentCredentialsAsync(string rpId) =>
+            Task.FromResult<IReadOnlyList<CredentialInfo>>(_credentials.FindByRp(rpId).Where(c => c.IsResident).Select(ToInfo).ToList());
+
+        public Task<uint> IncrementSignCountAsync(byte[] credentialId)
+        {
+            var credential = RequireCredential(credentialId);
+            credential.SignCount++;
+            return Task.FromResult(credential.SignCount);
+        }
+
+        public Task<byte[]> SignAsync(byte[] credentialId, byte[] data)
+        {
+            var credential = RequireCredential(credentialId);
+            return Task.FromResult(_keys.LoadKey(credential.KeyHandle).Sign(data));
+        }
+
+        private StoredCredential RequireCredential(byte[] credentialId) =>
+            _credentials.Find(credentialId) ?? throw new InvalidOperationException("Unknown credential.");
+
+        private static CredentialInfo ToInfo(StoredCredential credential) => new(
+            credential.CredentialId, credential.RpId, credential.UserId,
+            credential.UserName, credential.UserDisplayName, credential.IsResident, credential.SignCount);
+    }
+}

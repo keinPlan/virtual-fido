@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using VFido.Core.Device.Ctap;
 using VFido.Core.Protocol;
 using VFido.Core.Protocol.Helper;
+using VFido.SecretManager;
 
 namespace VFido.Core.Device
 {
@@ -20,11 +21,14 @@ namespace VFido.Core.Device
         private NLog.Logger logger = LogManager.GetCurrentClassLogger();
         private readonly Ctap2.Authenticator.IAuthenticator _authenticator;
 
-        public FidoUsbStick(int deviceID, Ctap2.Authenticator.IUserPresenceGate? presenceGate = null):base(deviceID)
+        public FidoUsbStick(int deviceID,
+            Ctap2.Authenticator.IUserPresenceGate? presenceGate = null,
+            IFido2SecretManager? secretManager = null) : base(deviceID)
         {
             _authenticator = new Ctap2.Authenticator.Fido2Authenticator(
-                new Ctap2.Authenticator.InMemoryCredentialStore(),
-                new Ctap2.Authenticator.Keys.SoftwareKeyStore(),
+                secretManager ?? new Fido2SecretManager(
+                    new VFido.SecretManager.MemoryBasedSecretStore.MemoryBasedSecretStore(),
+                    new VFido.SecretManager.MemoryBasedSecretStore.InMemoryCredentialStore()),
                 presenceGate);
 
             base.UsbDescriptor_Device = new UsbTypes.USB_DEVICE_DESCRIPTOR()
@@ -111,7 +115,7 @@ namespace VFido.Core.Device
             };
         }
 
-        protected override void HandleCtapMessage(uint cid, byte cmd, byte[] payload)
+        protected override async Task HandleCtapMessage(uint cid, byte cmd, byte[] payload)
         {
             logger.Debug(() => $"CTAP cid={cid:X8} cmd={cmd:X2} len={payload.Length}");
 
@@ -120,7 +124,7 @@ namespace VFido.Core.Device
                 byte[] response;
                 using (StartKeepAlive(cid))
                 {
-                    response = Ctap2.Ctap2Dispatcher.Handle(payload, _authenticator);
+                    response = await Ctap2.Ctap2Dispatcher.Handle(payload, _authenticator);
                 }
                 logger.Debug(() => $"CTAP2 cid={cid:X8} status={response[0]:X2} responseLen={response.Length}");
                 SendCtapResponse(cid, CtapHidConstants.CTAPHID_CBOR, response);

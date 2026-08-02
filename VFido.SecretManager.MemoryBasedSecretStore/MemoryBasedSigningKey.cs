@@ -1,15 +1,15 @@
 using System.Security.Cryptography;
-using VFido.Core.Device.Ctap2.Authenticator.Crypto;
+using VFido.SecretManager.Crypto;
 
-namespace VFido.Core.Device.Ctap2.Authenticator.Keys
+namespace VFido.SecretManager.MemoryBasedSecretStore
 {
-    internal class SoftwareEcdsaSigningKey : ISigningKey
+    public class MemoryBasedSigningKey : ISigningKey
     {
         private const int AlgEs256 = -7;
 
         private readonly ECDsa _ecdsa;
 
-        internal SoftwareEcdsaSigningKey(ECDsa ecdsa)
+        public MemoryBasedSigningKey(ECDsa ecdsa)
         {
             _ecdsa = ecdsa;
         }

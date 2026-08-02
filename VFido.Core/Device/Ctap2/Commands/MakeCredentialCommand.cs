@@ -10,10 +10,10 @@ namespace VFido.Core.Device.Ctap2.Commands
     /// <summary>authenticatorMakeCredential (0x01), CTAP2 section 6.1.</summary>
     internal static class MakeCredentialCommand
     {
-        internal static byte[] Handle(byte[] body, IAuthenticator authenticator)
+        internal static async Task<byte[]> Handle(byte[] body, IAuthenticator authenticator)
         {
             var request = Decode(body);
-            var result = authenticator.MakeCredential(request);
+            var result = await authenticator.MakeCredentialAsync(request);
             return Encode(result);
         }
 

@@ -1,10 +1,10 @@
 using System.Formats.Cbor;
 using System.Security.Cryptography;
 
-namespace VFido.Core.Device.Ctap2.Authenticator.Crypto
+namespace VFido.SecretManager.Crypto
 {
     /// <summary>Encodes an EC public key as a COSE_Key CBOR map (RFC 9053).</summary>
-    internal static class CoseKeyEncoder
+    public static class CoseKeyEncoder
     {
         private const int KtyEc2 = 2;
         private const int AlgEs256 = -7;
@@ -12,7 +12,7 @@ namespace VFido.Core.Device.Ctap2.Authenticator.Crypto
         private const int CrvP256 = 1;
 
         /// <summary>For a credential's public key, embedded in attestedCredentialData.</summary>
-        internal static byte[] Encode(ECParameters publicKeyParameters) => Encode(publicKeyParameters, AlgEs256);
+        public static byte[] Encode(ECParameters publicKeyParameters) => Encode(publicKeyParameters, AlgEs256);
 
         /// <summary>
         /// For the authenticator's ephemeral key-agreement public key (ClientPIN getKeyAgreement).
@@ -20,7 +20,7 @@ namespace VFido.Core.Device.Ctap2.Authenticator.Crypto
         /// with the ECDH algorithm, not ES256, or strict clients (Windows Hello, Chrome) reject it
         /// and silently abort the PIN ceremony.
         /// </summary>
-        internal static byte[] EncodeKeyAgreementKey(ECParameters publicKeyParameters) => Encode(publicKeyParameters, AlgEcdhEsHkdf256);
+        public static byte[] EncodeKeyAgreementKey(ECParameters publicKeyParameters) => Encode(publicKeyParameters, AlgEcdhEsHkdf256);
 
         private static byte[] Encode(ECParameters publicKeyParameters, int alg)
         {

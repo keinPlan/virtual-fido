@@ -70,6 +70,7 @@ namespace VFido.Core.Protocol
         public int Interval;
         public long Setup;
         public byte[] Buffer;
+        public int UnlinkSeqNum;
 
         internal UsbSetupData ParseSetupData()
         {
@@ -91,7 +92,12 @@ namespace VFido.Core.Protocol
             cmd.Header = UsbIpBasicHeader.Parse(buffer, offset);
             cmd.TransferFlags = BinaryPrimitives.ReadInt32BigEndian(buffer.AsSpan(offset + UsbIpBasicHeader.SIZE + 0));
 
-            if (cmd.Header.Command != 2)
+            if (cmd.Header.Command == 2)
+            {
+                // USBIP_CMD_UNLINK body: int32 unlink_seqnum followed by 24 bytes padding.
+                cmd.UnlinkSeqNum = BinaryPrimitives.ReadInt32BigEndian(buffer.AsSpan(offset + UsbIpBasicHeader.SIZE + 0));
+            }
+            else
             {
                 cmd.TransferBufferLength = BinaryPrimitives.ReadInt32BigEndian(buffer.AsSpan(offset + UsbIpBasicHeader.SIZE + 4));
                 cmd.StartFrame = BinaryPrimitives.ReadInt32BigEndian(buffer.AsSpan(offset + UsbIpBasicHeader.SIZE + 8));
