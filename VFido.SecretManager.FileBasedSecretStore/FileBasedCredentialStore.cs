@@ -5,9 +5,12 @@ namespace VFido.SecretManager.FileBasedSecretStore
 {
     /// <summary>
     /// Persists credential registrations to disk, one file per credential, each AES-GCM encrypted
-    /// the same way FileBasedSecretStore protects its keys (own directory, own salt - so this can
-    /// live in a sibling "credentials" folder next to FileBasedSecretStore's "keys" folder under a
-    /// stick's own config directory). Without this, a file-based-secret-manager stick would forget
+    /// the same way FileBasedSecretStore protects its keys - living in a sibling "credentials"
+    /// folder next to FileBasedSecretStore's "keys" folder under a stick's own config directory,
+    /// but sharing FileBasedSecretStore's salt.bin/verifier.bin (both point <c>authDirectory</c> at
+    /// the stick's root directory) rather than keeping its own, so both stores derive the identical
+    /// AES key from one username+password and a wrong password is rejected consistently regardless
+    /// of which store opens first. Without this, a file-based-secret-manager stick would forget
     /// which credentials it registered on every restart even though its signing keys survive.
     /// </summary>
     public class FileBasedCredentialStore : ICredentialStore
@@ -17,18 +20,22 @@ namespace VFido.SecretManager.FileBasedSecretStore
         private const string CredentialFileExtension = ".cred";
 
         private readonly string _directory;
+        private readonly string _authDirectory;
         private readonly byte[] _aesKey;
 
-        public FileBasedCredentialStore(string directory, string username, string password)
+        public FileBasedCredentialStore(string directory, string username, string password, string? authDirectory = null)
         {
             _directory = directory;
             Directory.CreateDirectory(_directory);
 
-            var isNewStore = !File.Exists(Path.Combine(_directory, SaltFileName));
+            _authDirectory = authDirectory ?? directory;
+            Directory.CreateDirectory(_authDirectory);
+
+            var isNewStore = !File.Exists(Path.Combine(_authDirectory, SaltFileName));
             var salt = LoadOrCreateSalt();
             _aesKey = AesKeyProtector.DeriveKey(username, password, salt);
 
-            PasswordVerifier.EnsureOrVerify(_directory, _aesKey, isNewStore);
+            PasswordVerifier.EnsureOrVerify(_authDirectory, _aesKey, isNewStore);
         }
 
         public void Save(StoredCredential credential)
@@ -74,7 +81,7 @@ namespace VFido.SecretManager.FileBasedSecretStore
 
         private byte[] LoadOrCreateSalt()
         {
-            var saltPath = Path.Combine(_directory, SaltFileName);
+            var saltPath = Path.Combine(_authDirectory, SaltFileName);
             if (File.Exists(saltPath))
                 return File.ReadAllBytes(saltPath);
 

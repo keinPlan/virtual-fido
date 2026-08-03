@@ -15,7 +15,10 @@ namespace VFido.SecretManager.MemoryBasedSecretStore
 
         private AttestationCertificate? _attestationCertificate;
 
-        public byte[] Aaguid => AaguidGuid.ToByteArray();
+        // Guid.ToByteArray() emits .NET's native mixed-endian layout (first three fields
+        // little-endian), which scrambles the hyphenated hex an RP displays for the AAGUID field -
+        // it must be the raw 16 bytes in RFC 4122 (big-endian) order instead.
+        public byte[] Aaguid => AaguidGuid.ToByteArray(bigEndian: true);
 
         public ISigningKey CreateEs256Key() => new MemoryBasedSigningKey(Crypto.EcdsaProvider.GenerateP256());
 

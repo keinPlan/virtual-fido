@@ -156,8 +156,8 @@ public sealed class StickManager : IStickManager
                 var (username, password) = credentials.Value;
                 // FileBasedSecretStore also implements IPinStateStore, persisting the PIN hash and
                 // retry counter alongside the signing keys it already protects in the same directory.
-                var keyStore = new SecretManager.FileBasedSecretStore.FileBasedSecretStore(_configStore.GetKeyStoreDirectory(config.Name), username, password);
-                var credentialStore = new FileBasedCredentialStore(_configStore.GetCredentialStoreDirectory(config.Name), username, password);
+                var keyStore = new SecretManager.FileBasedSecretStore.FileBasedSecretStore(_configStore.GetKeyStoreDirectory(config.Name), username, password, _configStore.GetAttestationCertificateDirectory(config.Name), _configStore.GetStickDirectory(config.Name));
+                var credentialStore = new FileBasedCredentialStore(_configStore.GetCredentialStoreDirectory(config.Name), username, password, _configStore.GetStickDirectory(config.Name));
                 return (new Fido2SecretManager(keyStore, credentialStore), keyStore);
             }
 

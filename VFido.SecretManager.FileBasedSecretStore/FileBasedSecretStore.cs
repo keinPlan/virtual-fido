@@ -5,10 +5,11 @@ namespace VFido.SecretManager.FileBasedSecretStore
 {
     /// <summary>
     /// Persists P-256 keys to disk, one file per key, each AES-GCM encrypted with a key derived
-    /// via PBKDF2(username, password, salt). The salt is generated once per store directory and
-    /// kept alongside the encrypted keys in plaintext - it isn't secret, only the username and
-    /// password (never persisted) are. Losing either makes every key file permanently
-    /// unrecoverable, matching the TPM-backed stores this seam is meant to also support.
+    /// via PBKDF2(username, password, salt). The salt is generated once per stick and kept in
+    /// plaintext under <see cref="_authDirectory"/> (shared with <see cref="FileBasedCredentialStore"/>)
+    /// - it isn't secret, only the username and password (never persisted) are. Losing either makes
+    /// every key file permanently unrecoverable, matching the TPM-backed stores this seam is meant
+    /// to also support.
     /// </summary>
     public class FileBasedSecretStore : IKeyStore, IPinStateStore
     {
@@ -27,20 +28,36 @@ namespace VFido.SecretManager.FileBasedSecretStore
         private static readonly Guid AaguidGuid = new("f11e0a10-0ea1-4b1f-8b0a-1b0a1e0a1b0a");
 
         private readonly string _directory;
+        private readonly string _attestationDirectory;
+        private readonly string _authDirectory;
         private readonly byte[] _aesKey;
 
-        public byte[] Aaguid => AaguidGuid.ToByteArray();
+        // Guid.ToByteArray() emits .NET's native mixed-endian layout (first three fields
+        // little-endian), which scrambles the hyphenated hex an RP displays for the AAGUID field -
+        // it must be the raw 16 bytes in RFC 4122 (big-endian) order instead.
+        public byte[] Aaguid => AaguidGuid.ToByteArray(bigEndian: true);
 
-        public FileBasedSecretStore(string directory, string username, string password)
+        /// <param name="authDirectory">
+        /// Where salt.bin/verifier.bin live. Shared with <see cref="FileBasedCredentialStore"/> (via
+        /// its own authDirectory parameter) so both stores derive the identical AES key from one
+        /// username+password, instead of each keeping its own salt.
+        /// </param>
+        public FileBasedSecretStore(string directory, string username, string password, string? attestationDirectory = null, string? authDirectory = null)
         {
             _directory = directory;
             Directory.CreateDirectory(_directory);
 
-            var isNewStore = !File.Exists(Path.Combine(_directory, SaltFileName));
+            _attestationDirectory = attestationDirectory ?? directory;
+            Directory.CreateDirectory(_attestationDirectory);
+
+            _authDirectory = authDirectory ?? directory;
+            Directory.CreateDirectory(_authDirectory);
+
+            var isNewStore = !File.Exists(Path.Combine(_authDirectory, SaltFileName));
             var salt = LoadOrCreateSalt();
             _aesKey = AesKeyProtector.DeriveKey(username, password, salt);
 
-            PasswordVerifier.EnsureOrVerify(_directory, _aesKey, isNewStore);
+            PasswordVerifier.EnsureOrVerify(_authDirectory, _aesKey, isNewStore);
         }
 
         public ISigningKey CreateEs256Key()
@@ -76,13 +93,13 @@ namespace VFido.SecretManager.FileBasedSecretStore
         {
             var intermediateCertDer = GetOrCreateIntermediateCert();
 
-            var leafCertPath = Path.Combine(_directory, AttestationCertFileName);
+            var leafCertPath = Path.Combine(_attestationDirectory, AttestationCertFileName);
             var leafKeyPath = KeyFilePath(AttestationKeyGuid);
 
             if (File.Exists(leafCertPath) && File.Exists(leafKeyPath))
                 return new AttestationCertificate(AttestationKeyHandle, new[] { File.ReadAllBytes(leafCertPath), intermediateCertDer });
 
-            using var intermediateKey = LoadPrivateKey(Path.Combine(_directory, AttestationIntermediateKeyFileName));
+            using var intermediateKey = LoadPrivateKey(Path.Combine(_attestationDirectory, AttestationIntermediateKeyFileName));
             var leafKey = Crypto.EcdsaProvider.GenerateP256();
             var leafCertDer = AttestationCertificateFactory.CreateAttestationLeaf(leafKey, intermediateKey, intermediateCertDer, Aaguid);
 
@@ -94,17 +111,17 @@ namespace VFido.SecretManager.FileBasedSecretStore
 
         private byte[] GetOrCreateIntermediateCert()
         {
-            var intermediateCertPath = Path.Combine(_directory, AttestationIntermediateCertFileName);
+            var intermediateCertPath = Path.Combine(_attestationDirectory, AttestationIntermediateCertFileName);
             if (File.Exists(intermediateCertPath))
                 return File.ReadAllBytes(intermediateCertPath);
 
             var rootCertDer = GetOrCreateRootCert();
-            using var rootKey = LoadPrivateKey(Path.Combine(_directory, AttestationRootKeyFileName));
+            using var rootKey = LoadPrivateKey(Path.Combine(_attestationDirectory, AttestationRootKeyFileName));
 
             var intermediateKey = Crypto.EcdsaProvider.GenerateP256();
             var intermediateCertDer = AttestationCertificateFactory.CreateIntermediate(intermediateKey, rootKey, rootCertDer);
 
-            File.WriteAllBytes(Path.Combine(_directory, AttestationIntermediateKeyFileName), AesKeyProtector.Encrypt(_aesKey, intermediateKey.ExportPkcs8PrivateKey()));
+            File.WriteAllBytes(Path.Combine(_attestationDirectory, AttestationIntermediateKeyFileName), AesKeyProtector.Encrypt(_aesKey, intermediateKey.ExportPkcs8PrivateKey()));
             File.WriteAllBytes(intermediateCertPath, intermediateCertDer);
 
             return intermediateCertDer;
@@ -112,14 +129,14 @@ namespace VFido.SecretManager.FileBasedSecretStore
 
         private byte[] GetOrCreateRootCert()
         {
-            var rootCertPath = Path.Combine(_directory, AttestationRootCertFileName);
+            var rootCertPath = Path.Combine(_attestationDirectory, AttestationRootCertFileName);
             if (File.Exists(rootCertPath))
                 return File.ReadAllBytes(rootCertPath);
 
             var rootKey = Crypto.EcdsaProvider.GenerateP256();
             var rootCertDer = AttestationCertificateFactory.CreateSelfSignedRoot(rootKey);
 
-            File.WriteAllBytes(Path.Combine(_directory, AttestationRootKeyFileName), AesKeyProtector.Encrypt(_aesKey, rootKey.ExportPkcs8PrivateKey()));
+            File.WriteAllBytes(Path.Combine(_attestationDirectory, AttestationRootKeyFileName), AesKeyProtector.Encrypt(_aesKey, rootKey.ExportPkcs8PrivateKey()));
             File.WriteAllBytes(rootCertPath, rootCertDer);
 
             return rootCertDer;
@@ -143,7 +160,7 @@ namespace VFido.SecretManager.FileBasedSecretStore
 
         public PinState? Load()
         {
-            var path = Path.Combine(_directory, PinStateFileName);
+            var path = Path.Combine(_authDirectory, PinStateFileName);
             if (!File.Exists(path))
                 return null;
 
@@ -155,16 +172,16 @@ namespace VFido.SecretManager.FileBasedSecretStore
         {
             var plaintext = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(state);
             var encrypted = AesKeyProtector.Encrypt(_aesKey, plaintext);
-            File.WriteAllBytes(Path.Combine(_directory, PinStateFileName), encrypted);
+            File.WriteAllBytes(Path.Combine(_authDirectory, PinStateFileName), encrypted);
         }
 
         private string KeyFilePath(Guid keyId) => keyId == AttestationKeyGuid
-            ? Path.Combine(_directory, AttestationKeyFileName)
+            ? Path.Combine(_attestationDirectory, AttestationKeyFileName)
             : Path.Combine(_directory, keyId + KeyFileExtension);
 
         private byte[] LoadOrCreateSalt()
         {
-            var saltPath = Path.Combine(_directory, SaltFileName);
+            var saltPath = Path.Combine(_authDirectory, SaltFileName);
             if (File.Exists(saltPath))
                 return File.ReadAllBytes(saltPath);
 

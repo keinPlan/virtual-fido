@@ -14,7 +14,9 @@ namespace VFido.Gui.Configuration;
 public sealed class StickConfigStore : IStickConfigStore
 {
     private const string ConfigFileName = "config.json";
+    private const string KeysFolderName = "keys";
     private const string CredentialsFolderName = "credentials";
+    private const string CertsFolderName = "certs";
     private const int MaxNameLength = 32;
 
     // Deliberately conservative rather than merely "whatever Windows/Linux allow": letters,
@@ -103,9 +105,11 @@ public sealed class StickConfigStore : IStickConfigStore
 
     public string GetStickDirectory(string name) => Path.Combine(_rootDirectory, name);
 
-    public string GetKeyStoreDirectory(string name) => GetStickDirectory(name);
+    public string GetKeyStoreDirectory(string name) => Path.Combine(GetStickDirectory(name), KeysFolderName);
 
     public string GetCredentialStoreDirectory(string name) => Path.Combine(GetStickDirectory(name), CredentialsFolderName);
+
+    public string GetAttestationCertificateDirectory(string name) => Path.Combine(GetStickDirectory(name), CertsFolderName);
 
     /// <summary>True if <paramref name="name"/> is safe to use verbatim as a stick's folder name: non-empty, at most <see cref="MaxNameLength"/> characters, no spaces or path-unsafe characters.</summary>
     public static bool IsValidStickName(string? name) =>

@@ -17,4 +17,6 @@ public interface IStickConfigStore
     string GetKeyStoreDirectory(string name);
 
     string GetCredentialStoreDirectory(string name);
+
+    string GetAttestationCertificateDirectory(string name);
 }
