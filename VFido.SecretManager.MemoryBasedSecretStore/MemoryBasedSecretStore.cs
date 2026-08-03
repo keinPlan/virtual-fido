@@ -29,6 +29,12 @@ namespace VFido.SecretManager.MemoryBasedSecretStore
             return new MemoryBasedSigningKey(ecdsa);
         }
 
+        // The handle *is* the key material (see MemoryBasedSigningKey.ExportHandle) - nothing else
+        // holds a copy, so there's nothing to remove beyond what ICredentialStore.Delete already drops.
+        public void DeleteKey(byte[] handle)
+        {
+        }
+
         public AttestationCertificate GetOrCreateAttestationCertificate()
         {
             if (_attestationCertificate != null)

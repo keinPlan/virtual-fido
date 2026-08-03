@@ -61,6 +61,9 @@ namespace VFido.SecretManager
 
         public Task DeleteCredentialAsync(byte[] credentialId)
         {
+            if (_credentials.Find(credentialId) is { } credential)
+                _keys.DeleteKey(credential.KeyHandle);
+
             _credentials.Delete(credentialId);
             return Task.CompletedTask;
         }

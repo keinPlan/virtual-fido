@@ -14,6 +14,9 @@ namespace VFido.SecretManager
         ISigningKey CreateEs256Key();
         ISigningKey LoadKey(byte[] handle);
 
+        /// <summary>Permanently removes a key previously returned by <see cref="CreateEs256Key"/>, identified by its exported handle.</summary>
+        void DeleteKey(byte[] handle);
+
         /// <summary>
         /// Returns this authenticator's attestation key/certificate chain, generating and
         /// persisting a self-signed root CA and a leaf certificate it issues on first call.

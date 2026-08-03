@@ -175,6 +175,13 @@ namespace VFido.SecretManager.FileBasedSecretStore
             File.WriteAllBytes(Path.Combine(_authDirectory, PinStateFileName), encrypted);
         }
 
+        public void DeleteKey(byte[] handle)
+        {
+            var path = KeyFilePath(new Guid(handle));
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+
         private string KeyFilePath(Guid keyId) => keyId == AttestationKeyGuid
             ? Path.Combine(_attestationDirectory, AttestationKeyFileName)
             : Path.Combine(_directory, keyId + KeyFileExtension);
