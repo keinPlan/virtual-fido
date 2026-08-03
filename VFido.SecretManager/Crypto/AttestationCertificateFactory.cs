@@ -14,12 +14,12 @@ namespace VFido.SecretManager.Crypto
     public static class AttestationCertificateFactory
     {
         public const string RootSubjectName = "CN=VirtualSecurity Root CA";
-        public const string IntermediateSubjectName = "CN=VirtualSecurity Attestation CA, O=VirtualFido";
+        public const string IntermediateSubjectName = "CN=VirtualSecurity Attestation CA, O=VirtualSecurity";
 
         // CTAP2 attestation certificate requirements (§5.1): Subject-C/O/OU/CN are all mandated on
         // the batch (leaf) attestation certificate specifically - root/intermediate CAs aren't held
         // to this shape.
-        public const string LeafSubjectName = "CN=VirtualFido Virtual Authenticator, OU=Authenticator Attestation, O=VirtualFido, C=AT";
+        public const string LeafSubjectName = "CN=VirtualFido, OU=Authenticator Attestation, O=VirtualSecurity, C=AT";
 
         /// <summary>id-fido-gen-ce-aaguid (FIDO Alliance arc), the extension binding a batch attestation certificate to a specific AAGUID.</summary>
         private static readonly Oid AaguidExtensionOid = new("1.3.6.1.4.1.45724.1.1.4");

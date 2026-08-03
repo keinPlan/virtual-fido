@@ -14,7 +14,6 @@ namespace VFido.Gui.Configuration;
 public sealed class StickConfigStore : IStickConfigStore
 {
     private const string ConfigFileName = "config.json";
-    private const string KeysFolderName = "keys";
     private const string CredentialsFolderName = "credentials";
     private const int MaxNameLength = 32;
 
@@ -104,7 +103,7 @@ public sealed class StickConfigStore : IStickConfigStore
 
     public string GetStickDirectory(string name) => Path.Combine(_rootDirectory, name);
 
-    public string GetKeyStoreDirectory(string name) => Path.Combine(GetStickDirectory(name), KeysFolderName);
+    public string GetKeyStoreDirectory(string name) => GetStickDirectory(name);
 
     public string GetCredentialStoreDirectory(string name) => Path.Combine(GetStickDirectory(name), CredentialsFolderName);
 
