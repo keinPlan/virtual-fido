@@ -3,8 +3,13 @@ name: .NET Desktop Build
 on:
   push:
     branches: [ "master" ]
+    paths: [ "version.txt" ]
   pull_request:
     branches: [ "master" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -29,22 +34,45 @@ jobs:
       with:
         dotnet-version: 8.0.x
 
+    - name: Determine version
+      id: version
+      shell: pwsh
+      run: |
+        $base = (Get-Content version.txt -Raw).Trim()
+        $build = "{0:D4}" -f [int]"${{ github.run_number }}"
+        $version = "$base+build.$build"
+        echo "version=$version" >> $env:GITHUB_OUTPUT
+        echo "base=$base" >> $env:GITHUB_OUTPUT
+        echo "build=$build" >> $env:GITHUB_OUTPUT
+
     - name: Restore
       run: dotnet restore $env:Solution_Name
 
     - name: Build
-      run: dotnet build $env:Solution_Name --configuration ${{ matrix.configuration }} --no-restore
+      run: dotnet build $env:Solution_Name --configuration ${{ matrix.configuration }} --no-restore -p:Version=${{ steps.version.outputs.version }}
 
     - name: Test
       run: dotnet test $env:Solution_Name --configuration ${{ matrix.configuration }} --no-build
 
     - name: Publish GUI (Release only)
       if: matrix.configuration == 'Release'
-      run: dotnet publish $env:Gui_Project_Path --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true --output publish
+      run: dotnet publish $env:Gui_Project_Path --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:Version=${{ steps.version.outputs.version }} --output publish
 
     - name: Upload build artifacts
       if: matrix.configuration == 'Release'
       uses: actions/upload-artifact@v4
       with:
-        name: VFido.Gui-win-x64
+        name: VFido.Gui-${{ steps.version.outputs.base }}-build.${{ steps.version.outputs.build }}-win-x64
         path: publish
+
+    - name: Zip published build
+      if: matrix.configuration == 'Release' && github.event_name == 'push'
+      run: Compress-Archive -Path publish\* -DestinationPath VFido.Gui-${{ steps.version.outputs.base }}-build.${{ steps.version.outputs.build }}-win-x64.zip
+
+    - name: Create GitHub Release
+      if: matrix.configuration == 'Release' && github.event_name == 'push'
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: build-${{ steps.version.outputs.build }}
+        name: v${{ steps.version.outputs.base }} (build ${{ steps.version.outputs.build }})
+        files: VFido.Gui-${{ steps.version.outputs.base }}-build.${{ steps.version.outputs.build }}-win-x64.zip
