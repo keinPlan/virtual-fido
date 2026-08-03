@@ -16,7 +16,7 @@ VirtualFido is a Windows software FIDO2/CTAP2 security key. It emulates a USB se
 
 - Windows 10/11
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- A VHCI-capable USB/IP driver installed on the host (required for the virtual device to appear as a real USB device)
+- A VHCI-capable USB/IP driver installed on the host (required for the virtual device to appear as a real USB device) — see [usbip-win2](https://github.com/vadimgrn/usbip-win2) (bundled here as [USBip-0.9.7.3-x64-release.exe](USBip-0.9.7.3-x64-release.exe))
 
 ## Building
 
