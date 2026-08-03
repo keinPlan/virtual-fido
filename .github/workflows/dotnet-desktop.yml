@@ -1,0 +1,50 @@
+name: .NET Desktop Build
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        configuration: [Debug, Release]
+
+    runs-on: windows-latest
+
+    env:
+      Solution_Name: VirtualFido.sln
+      Gui_Project_Path: VFido.Gui\VFido.Gui.csproj
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Install .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    - name: Restore
+      run: dotnet restore $env:Solution_Name
+
+    - name: Build
+      run: dotnet build $env:Solution_Name --configuration ${{ matrix.configuration }} --no-restore
+
+    - name: Test
+      run: dotnet test $env:Solution_Name --configuration ${{ matrix.configuration }} --no-build
+
+    - name: Publish GUI (Release only)
+      if: matrix.configuration == 'Release'
+      run: dotnet publish $env:Gui_Project_Path --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true --output publish
+
+    - name: Upload build artifacts
+      if: matrix.configuration == 'Release'
+      uses: actions/upload-artifact@v4
+      with:
+        name: VFido.Gui-win-x64
+        path: publish
