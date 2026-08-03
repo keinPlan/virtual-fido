@@ -29,4 +29,6 @@ namespace VFido.SecretManager
 
     public sealed record SignWithAttestationKeyRequest(byte[] Data);
     public sealed record SignWithAttestationKeyResponse(byte[] Signature);
+
+    public sealed record GetAaguidResponse(byte[] Aaguid);
 }

@@ -81,6 +81,9 @@ api.MapPost(SecretManagerRoutes.Sign, async (SignRequest request, IFido2SecretMa
 api.MapPost(SecretManagerRoutes.GetAttestationCertificate, async (IFido2SecretManager manager) =>
     Results.Ok(new GetAttestationCertificateChainResponse(await manager.GetAttestationCertificateChainAsync())));
 
+api.MapPost(SecretManagerRoutes.GetAaguid, async (IFido2SecretManager manager) =>
+    Results.Ok(new GetAaguidResponse(await manager.GetAaguidAsync())));
+
 api.MapPost(SecretManagerRoutes.SignWithAttestationKey, async (SignWithAttestationKeyRequest request, IFido2SecretManager manager) =>
     Results.Ok(new SignWithAttestationKeyResponse(await manager.SignWithAttestationKeyAsync(request.Data))));
 

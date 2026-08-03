@@ -15,7 +15,6 @@ public partial class AddStickWindow : Window
     public AddStickWindow()
     {
         InitializeComponent();
-        AaguidBox.Text = Guid.NewGuid().ToString();
         SerialNumberBox.Text = "VFIDO-" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
         SecretManagerTypeBox.SelectedIndex = 0;
     }
@@ -28,8 +27,9 @@ public partial class AddStickWindow : Window
     }
 
     /// <summary>
-    /// Edit mode only touches Name/SerialNumberIdentifier/Aaguid - the secret manager backend is
-    /// fixed at creation time to avoid orphaning already-created key/credential files.
+    /// Edit mode only touches SerialNumberIdentifier - Name is fixed at creation time (it's the
+    /// stick's folder name) and the secret manager backend is fixed too, to avoid orphaning
+    /// already-created key/credential files.
     /// </summary>
     public static async Task<StickConfig?> EditAsync(Window owner, IStickConfigStore configStore, StickConfig existing)
     {
@@ -40,8 +40,8 @@ public partial class AddStickWindow : Window
             Title = "Edit stick",
         };
         window.NameBox.Text = existing.Name;
+        window.NameBox.IsEnabled = false; // the name is this stick's folder - not renameable after creation
         window.SerialNumberBox.Text = existing.SerialNumberIdentifier;
-        window.AaguidBox.Text = existing.Aaguid.ToString();
         window.SecretManagerSection.IsVisible = false;
         window.FilePanel.IsVisible = false;
         window.MtlsPanel.IsVisible = false;
@@ -50,8 +50,6 @@ public partial class AddStickWindow : Window
         await window.ShowDialog(owner);
         return window._result;
     }
-
-    private void RegenerateAaguid_Click(object? sender, RoutedEventArgs e) => AaguidBox.Text = Guid.NewGuid().ToString();
 
     private void SecretManagerType_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
@@ -81,23 +79,15 @@ public partial class AddStickWindow : Window
 
     private void Create_Click(object? sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(NameBox.Text))
+        if (_existing == null && !StickConfigStore.IsValidStickName(NameBox.Text))
         {
-            ShowError("Name is required.");
-            return;
-        }
-
-        if (!Guid.TryParse(AaguidBox.Text, out var aaguid))
-        {
-            ShowError("AAGUID must be a valid GUID.");
+            ShowError("Name must be 1-32 characters, letters/digits/'.'/'_'/'-' only, no spaces - it also becomes the stick's folder name.");
             return;
         }
 
         if (_existing != null)
         {
-            _existing.Name = NameBox.Text!;
             _existing.SerialNumberIdentifier = SerialNumberBox.Text!;
-            _existing.Aaguid = aaguid;
 
             try
             {
@@ -161,15 +151,15 @@ public partial class AddStickWindow : Window
 
         try
         {
-            _result = _configStore!.Create(NameBox.Text!, aaguid, SerialNumberBox.Text!, secretManager);
+            _result = _configStore!.Create(NameBox.Text!, SerialNumberBox.Text!, secretManager);
 
             // Eagerly initialize the encrypted store now, while the password is still on screen,
             // instead of waiting for the first Connect - it's never written to config.json either
             // way, so this is purely about not losing the moment the user has it in mind.
             if (filePassword != null)
             {
-                _ = new FileBasedSecretStore(_configStore.GetKeyStoreDirectory(_result.Id), FileUsernameBox.Text!, filePassword);
-                _ = new FileBasedCredentialStore(_configStore.GetCredentialStoreDirectory(_result.Id), FileUsernameBox.Text!, filePassword);
+                _ = new FileBasedSecretStore(_configStore.GetKeyStoreDirectory(_result.Name), FileUsernameBox.Text!, filePassword);
+                _ = new FileBasedCredentialStore(_configStore.GetCredentialStoreDirectory(_result.Name), FileUsernameBox.Text!, filePassword);
             }
         }
         catch (Exception ex)

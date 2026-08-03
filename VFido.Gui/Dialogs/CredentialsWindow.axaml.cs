@@ -42,7 +42,7 @@ public partial class CredentialsWindow : Window
         IReadOnlyList<CredentialInfo> credentials;
         try
         {
-            credentials = await _stickManager!.GetCredentialsAsync(_stick!.Id);
+            credentials = await _stickManager!.GetCredentialsAsync(_stick!.Name);
         }
         catch (Exception ex)
         {
@@ -107,7 +107,7 @@ public partial class CredentialsWindow : Window
 
         try
         {
-            await _stickManager!.DeleteCredentialAsync(_stick!.Id, credential.CredentialId);
+            await _stickManager!.DeleteCredentialAsync(_stick!.Name, credential.CredentialId);
         }
         catch (Exception ex)
         {

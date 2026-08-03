@@ -23,8 +23,13 @@ namespace VFido.SecretManager.FileBasedSecretStore
         private const string AttestationRootKeyFileName = "attestation-root.key";
         private const string AttestationRootCertFileName = "attestation-root.crt";
 
+        /// <summary>Fixed AAGUID identifying every stick backed by this store type, regardless of directory.</summary>
+        private static readonly Guid AaguidGuid = new("f11e0a10-0ea1-4b1f-8b0a-1b0a1e0a1b0a");
+
         private readonly string _directory;
         private readonly byte[] _aesKey;
+
+        public byte[] Aaguid => AaguidGuid.ToByteArray();
 
         public FileBasedSecretStore(string directory, string username, string password)
         {
@@ -79,7 +84,7 @@ namespace VFido.SecretManager.FileBasedSecretStore
 
             using var intermediateKey = LoadPrivateKey(Path.Combine(_directory, AttestationIntermediateKeyFileName));
             var leafKey = Crypto.EcdsaProvider.GenerateP256();
-            var leafCertDer = AttestationCertificateFactory.CreateAttestationLeaf(leafKey, intermediateKey, intermediateCertDer);
+            var leafCertDer = AttestationCertificateFactory.CreateAttestationLeaf(leafKey, intermediateKey, intermediateCertDer, Aaguid);
 
             File.WriteAllBytes(leafKeyPath, AesKeyProtector.Encrypt(_aesKey, leafKey.ExportPkcs8PrivateKey()));
             File.WriteAllBytes(leafCertPath, leafCertDer);

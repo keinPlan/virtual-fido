@@ -8,6 +8,9 @@ namespace VFido.SecretManager
     /// </summary>
     public interface IKeyStore
     {
+        /// <summary>Fixed 16-byte AAGUID identifying this store's authenticator model, embedded in authenticatorData and the attestation leaf certificate.</summary>
+        byte[] Aaguid { get; }
+
         ISigningKey CreateEs256Key();
         ISigningKey LoadKey(byte[] handle);
 

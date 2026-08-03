@@ -25,7 +25,7 @@ public sealed class StickManager : IStickManager
     private readonly IStickConfigStore _configStore;
     private readonly ICredentialPrompt _credentialPrompt;
     private readonly UsbIpServer _server = new(Host, Port);
-    private readonly Dictionary<Guid, ConnectedStick> _connected = new();
+    private readonly Dictionary<string, ConnectedStick> _connected = new();
 
     private bool _serverStarted;
     private int _nextDeviceSlot = 1;
@@ -38,21 +38,21 @@ public sealed class StickManager : IStickManager
 
     public IReadOnlyList<StickConfig> GetConfiguredSticks() => _configStore.LoadAll();
 
-    public bool IsConnected(Guid stickId) => _connected.ContainsKey(stickId);
+    public bool IsConnected(string stickName) => _connected.ContainsKey(stickName);
 
-    public async Task<StickAttachResult> ConnectAsync(Guid stickId)
+    public async Task<StickAttachResult> ConnectAsync(string stickName)
     {
-        if (_connected.ContainsKey(stickId))
+        if (_connected.ContainsKey(stickName))
             return new StickAttachResult(StickAttachOutcome.Success, string.Empty, null);
 
         // Only one stick may be attached at a time - connecting a new one disconnects whatever
         // else is currently attached first, so the host never sees more than one virtual key.
-        foreach (var otherStickId in _connected.Keys.Where(id => id != stickId).ToList())
-            await DisconnectAsync(otherStickId);
+        foreach (var otherStickName in _connected.Keys.Where(name => name != stickName).ToList())
+            await DisconnectAsync(otherStickName);
 
-        var config = _configStore.LoadAll().FirstOrDefault(c => c.Id == stickId);
+        var config = _configStore.LoadAll().FirstOrDefault(c => c.Name == stickName);
         if (config == null)
-            return new StickAttachResult(StickAttachOutcome.Failed, string.Empty, $"No stored config for stick {stickId}.");
+            return new StickAttachResult(StickAttachOutcome.Failed, string.Empty, $"No stored config for stick {stickName}.");
 
         IFido2SecretManager secretManager;
         IPinStateStore? pinStateStore;
@@ -66,15 +66,17 @@ public sealed class StickManager : IStickManager
         }
         catch (Exception ex)
         {
-            Logger.Warn(ex, () => $"Failed to build secret manager for stick {stickId}: {ex.Message}");
+            Logger.Warn(ex, () => $"Failed to build secret manager for stick {stickName}: {ex.Message}");
             return new StickAttachResult(StickAttachOutcome.Failed, string.Empty, ex.Message);
         }
+
+        var aaguid = await secretManager.GetAaguidAsync();
 
         var deviceId = (0x0001 << 16) | _nextDeviceSlot++;
         var device = new FidoUsbStick(
             deviceId,
             config.SerialNumberIdentifier,
-            config.Aaguid.ToByteArray(),
+            aaguid,
             new AvaloniaUserPresenceGate(config.Name),
             secretManager,
             pinStateStore);
@@ -97,13 +99,13 @@ public sealed class StickManager : IStickManager
             return result;
         }
 
-        _connected[stickId] = new ConnectedStick(device, deviceId, result.Port, secretManager);
+        _connected[stickName] = new ConnectedStick(device, deviceId, result.Port, secretManager);
         return result;
     }
 
-    public Task<StickAttachResult> DisconnectAsync(Guid stickId)
+    public Task<StickAttachResult> DisconnectAsync(string stickName)
     {
-        if (!_connected.TryGetValue(stickId, out var connectedStick))
+        if (!_connected.TryGetValue(stickName, out var connectedStick))
             return Task.FromResult(new StickAttachResult(StickAttachOutcome.Success, string.Empty, null));
 
         var vhci = new VhciAttacher();
@@ -122,21 +124,21 @@ public sealed class StickManager : IStickManager
 
         _server.VirtualUsbDevices.Remove(connectedStick.DeviceId);
         (connectedStick.SecretManager as IDisposable)?.Dispose();
-        _connected.Remove(stickId);
+        _connected.Remove(stickName);
 
         return Task.FromResult(result);
     }
 
-    public Task<IReadOnlyList<CredentialInfo>> GetCredentialsAsync(Guid stickId) =>
-        RequireConnected(stickId).SecretManager.FindAllCredentialsAsync();
+    public Task<IReadOnlyList<CredentialInfo>> GetCredentialsAsync(string stickName) =>
+        RequireConnected(stickName).SecretManager.FindAllCredentialsAsync();
 
-    public Task DeleteCredentialAsync(Guid stickId, byte[] credentialId) =>
-        RequireConnected(stickId).SecretManager.DeleteCredentialAsync(credentialId);
+    public Task DeleteCredentialAsync(string stickName, byte[] credentialId) =>
+        RequireConnected(stickName).SecretManager.DeleteCredentialAsync(credentialId);
 
-    private ConnectedStick RequireConnected(Guid stickId) =>
-        _connected.TryGetValue(stickId, out var connectedStick)
+    private ConnectedStick RequireConnected(string stickName) =>
+        _connected.TryGetValue(stickName, out var connectedStick)
             ? connectedStick
-            : throw new InvalidOperationException($"Stick {stickId} is not connected.");
+            : throw new InvalidOperationException($"Stick {stickName} is not connected.");
 
     private async Task<(IFido2SecretManager SecretManager, IPinStateStore? PinStateStore)?> BuildSecretManagerAsync(StickConfig config)
     {
@@ -154,8 +156,8 @@ public sealed class StickManager : IStickManager
                 var (username, password) = credentials.Value;
                 // FileBasedSecretStore also implements IPinStateStore, persisting the PIN hash and
                 // retry counter alongside the signing keys it already protects in the same directory.
-                var keyStore = new SecretManager.FileBasedSecretStore.FileBasedSecretStore(_configStore.GetKeyStoreDirectory(config.Id), username, password);
-                var credentialStore = new FileBasedCredentialStore(_configStore.GetCredentialStoreDirectory(config.Id), username, password);
+                var keyStore = new SecretManager.FileBasedSecretStore.FileBasedSecretStore(_configStore.GetKeyStoreDirectory(config.Name), username, password);
+                var credentialStore = new FileBasedCredentialStore(_configStore.GetCredentialStoreDirectory(config.Name), username, password);
                 return (new Fido2SecretManager(keyStore, credentialStore), keyStore);
             }
 
@@ -166,7 +168,7 @@ public sealed class StickManager : IStickManager
                     return null;
 
                 var (username, password) = credentials.Value;
-                var stickDirectory = _configStore.GetStickDirectory(config.Id);
+                var stickDirectory = _configStore.GetStickDirectory(config.Name);
                 var clientCertificate = new X509Certificate2(
                     ResolvePath(stickDirectory, mtlsConfig.ClientCertificatePath), mtlsConfig.ClientCertificatePassword);
                 var serverCaCertificate = new X509Certificate2(ResolvePath(stickDirectory, mtlsConfig.ServerCaCertificatePath));

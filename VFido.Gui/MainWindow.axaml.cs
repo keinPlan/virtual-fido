@@ -79,7 +79,7 @@ public partial class MainWindow : Window
 
     private Control BuildStickCard(StickConfig stick)
     {
-        var connected = _stickManager.IsConnected(stick.Id);
+        var connected = _stickManager.IsConnected(stick.Name);
 
         var statusDot = new Avalonia.Controls.Shapes.Ellipse
         {
@@ -150,8 +150,8 @@ public partial class MainWindow : Window
     private async Task ToggleConnectAsync(StickConfig stick, bool wasConnected)
     {
         var result = wasConnected
-            ? await _stickManager.DisconnectAsync(stick.Id)
-            : await _stickManager.ConnectAsync(stick.Id);
+            ? await _stickManager.DisconnectAsync(stick.Name)
+            : await _stickManager.ConnectAsync(stick.Name);
 
         await ReportAttachResultAsync(result);
         RefreshStickList();

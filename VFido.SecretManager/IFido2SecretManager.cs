@@ -12,6 +12,9 @@ namespace VFido.SecretManager
     /// </summary>
     public interface IFido2SecretManager
     {
+        /// <summary>The fixed 16-byte AAGUID identifying this store's authenticator model.</summary>
+        Task<byte[]> GetAaguidAsync();
+
         /// <summary>Generates a new credential key pair and persists it, returning only its public half.</summary>
         Task<CredentialRegistration> CreateCredentialAsync(string rpId, byte[] userId, string userName, string userDisplayName, bool isResident, int credProtect);
 

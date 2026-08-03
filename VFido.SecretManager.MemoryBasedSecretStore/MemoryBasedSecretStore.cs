@@ -10,7 +10,12 @@ namespace VFido.SecretManager.MemoryBasedSecretStore
     /// </summary>
     public class MemoryBasedSecretStore : IKeyStore
     {
+        /// <summary>Fixed AAGUID identifying every stick backed by this store type.</summary>
+        private static readonly Guid AaguidGuid = new("6d90ff30-1e3a-4c6a-8b7b-9a4e6a2c9f30");
+
         private AttestationCertificate? _attestationCertificate;
+
+        public byte[] Aaguid => AaguidGuid.ToByteArray();
 
         public ISigningKey CreateEs256Key() => new MemoryBasedSigningKey(Crypto.EcdsaProvider.GenerateP256());
 
@@ -33,7 +38,7 @@ namespace VFido.SecretManager.MemoryBasedSecretStore
             var intermediateCertDer = AttestationCertificateFactory.CreateIntermediate(intermediateKey, rootKey, rootCertDer);
 
             var leafKey = Crypto.EcdsaProvider.GenerateP256();
-            var leafCertDer = AttestationCertificateFactory.CreateAttestationLeaf(leafKey, intermediateKey, intermediateCertDer);
+            var leafCertDer = AttestationCertificateFactory.CreateAttestationLeaf(leafKey, intermediateKey, intermediateCertDer, Aaguid);
 
             _attestationCertificate = new AttestationCertificate(leafKey.ExportPkcs8PrivateKey(), new[] { leafCertDer, intermediateCertDer });
             return _attestationCertificate;

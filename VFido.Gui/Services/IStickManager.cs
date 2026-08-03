@@ -22,24 +22,25 @@ public sealed record StickAttachResult(StickAttachOutcome Outcome, string Busid,
 /// <summary>
 /// Owns the lifetime of the (single, shared) USB/IP server and the configured virtual FIDO
 /// sticks connected to it. Loading a stick's config doesn't attach it - the caller connects and
-/// disconnects sticks individually by id.
+/// disconnects sticks individually by name (see <see cref="StickConfig.Name"/>, this stick's
+/// unique identifier).
 /// </summary>
 public interface IStickManager
 {
     IReadOnlyList<StickConfig> GetConfiguredSticks();
 
-    bool IsConnected(Guid stickId);
+    bool IsConnected(string stickName);
 
-    Task<StickAttachResult> ConnectAsync(Guid stickId);
+    Task<StickAttachResult> ConnectAsync(string stickName);
 
-    Task<StickAttachResult> DisconnectAsync(Guid stickId);
+    Task<StickAttachResult> DisconnectAsync(string stickName);
 
     /// <summary>
     /// Metadata-only view of every credential stored on a currently connected stick. Never
     /// exposes key handles or private key material. Throws if the stick isn't connected.
     /// </summary>
-    Task<IReadOnlyList<CredentialInfo>> GetCredentialsAsync(Guid stickId);
+    Task<IReadOnlyList<CredentialInfo>> GetCredentialsAsync(string stickName);
 
     /// <summary>Permanently deletes a stored credential from a currently connected stick.</summary>
-    Task DeleteCredentialAsync(Guid stickId, byte[] credentialId);
+    Task DeleteCredentialAsync(string stickName, byte[] credentialId);
 }

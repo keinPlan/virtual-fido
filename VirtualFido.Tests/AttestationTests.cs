@@ -67,5 +67,26 @@ namespace VirtualFido.Tests
 
             Assert.Equal(first.AttestationCertificateChainDer, second.AttestationCertificateChainDer);
         }
+
+        [Fact]
+        public async Task MakeCredential_LeafCertificate_CarriesTheStoresAaguidExtension()
+        {
+            var keyStore = new MemoryBasedSecretStore();
+            var secrets = new Fido2SecretManager(keyStore, new InMemoryCredentialStore());
+            var authenticator = new Fido2Authenticator(secrets, await secrets.GetAaguidAsync());
+
+            var result = await authenticator.MakeCredentialAsync(NewMakeCredentialRequest());
+
+            using var leaf = new X509Certificate2(result.AttestationCertificateChainDer[0]);
+            var extension = leaf.Extensions["1.3.6.1.4.1.45724.1.1.4"];
+            Assert.NotNull(extension);
+            Assert.False(extension!.Critical);
+
+            // Extension value is a DER OCTET STRING wrapping the raw 16-byte AAGUID.
+            var rawData = extension.RawData;
+            Assert.Equal(0x04, rawData[0]);
+            Assert.Equal(16, rawData[1]);
+            Assert.Equal(keyStore.Aaguid, rawData[2..]);
+        }
     }
 }

@@ -7,7 +7,7 @@ using Xunit;
 
 namespace VirtualFido.Tests
 {
-    /// <summary>Regression coverage guarding against AAGUID becoming a shared static again.</summary>
+    /// <summary>Regression coverage for the AAGUID being fixed per secret manager store, not per stick.</summary>
     public class AaguidPerStickTests
     {
         private static byte[] ExtractAaguid(byte[] getInfoResponse)
@@ -30,17 +30,17 @@ namespace VirtualFido.Tests
             return aaguid!;
         }
 
-        private static Fido2Authenticator NewAuthenticator(byte[] aaguid) =>
-            new(new Fido2SecretManager(new MemoryBasedSecretStore(), new InMemoryCredentialStore()), aaguid);
+        private static async Task<Fido2Authenticator> NewAuthenticatorAsync()
+        {
+            var secrets = new Fido2SecretManager(new MemoryBasedSecretStore(), new InMemoryCredentialStore());
+            return new Fido2Authenticator(secrets, await secrets.GetAaguidAsync());
+        }
 
         [Fact]
-        public async Task GetInfo_ReportsThePerStickConfiguredAaguid_NotASharedConstant()
+        public async Task GetInfo_ReportsTheFixedAaguidForThisStoreType_TheSameAcrossInstances()
         {
-            var aaguidA = Guid.NewGuid().ToByteArray();
-            var aaguidB = Guid.NewGuid().ToByteArray();
-
-            var authenticatorA = NewAuthenticator(aaguidA);
-            var authenticatorB = NewAuthenticator(aaguidB);
+            var authenticatorA = await NewAuthenticatorAsync();
+            var authenticatorB = await NewAuthenticatorAsync();
 
             var responseA = await Ctap2Dispatcher.Handle(new[] { Ctap2Constants.AuthenticatorGetInfo }, authenticatorA);
             var responseB = await Ctap2Dispatcher.Handle(new[] { Ctap2Constants.AuthenticatorGetInfo }, authenticatorB);
@@ -48,9 +48,10 @@ namespace VirtualFido.Tests
             var reportedA = ExtractAaguid(responseA);
             var reportedB = ExtractAaguid(responseB);
 
-            Assert.Equal(aaguidA, reportedA);
-            Assert.Equal(aaguidB, reportedB);
-            Assert.NotEqual(reportedA, reportedB);
+            // Two sticks backed by the same store type (MemoryBasedSecretStore) share the same
+            // hardcoded AAGUID - it identifies the authenticator model, not the individual stick.
+            Assert.Equal(reportedA, reportedB);
+            Assert.Equal(new MemoryBasedSecretStore().Aaguid, reportedA);
         }
     }
 }

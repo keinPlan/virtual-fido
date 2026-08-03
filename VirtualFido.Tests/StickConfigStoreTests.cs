@@ -26,13 +26,12 @@ namespace VirtualFido.Tests
         {
             var store = new StickConfigStore(_root);
 
-            var created = store.Create("My Stick", Guid.NewGuid(), "VFIDO-0001", new MemorySecretManagerConfig());
+            var created = store.Create("MyStick", "VFIDO-0001", new MemorySecretManagerConfig());
 
             var loaded = Assert.Single(store.LoadAll());
-            Assert.Equal(created.Id, loaded.Id);
-            Assert.Equal("My Stick", loaded.Name);
+            Assert.Equal(created.Name, loaded.Name);
+            Assert.Equal("MyStick", loaded.Name);
             Assert.Equal("VFIDO-0001", loaded.SerialNumberIdentifier);
-            Assert.Equal(created.Aaguid, loaded.Aaguid);
             Assert.IsType<MemorySecretManagerConfig>(loaded.SecretManager);
         }
 
@@ -41,14 +40,14 @@ namespace VirtualFido.Tests
         {
             var store = new StickConfigStore(_root);
 
-            store.Create("File stick", Guid.NewGuid(), "VFIDO-0002",
+            store.Create("FileStick", "VFIDO-0002",
                 new FileSecretManagerConfig { Username = "alice" });
 
             var loaded = Assert.Single(store.LoadAll());
             var fileConfig = Assert.IsType<FileSecretManagerConfig>(loaded.SecretManager);
             Assert.Equal("alice", fileConfig.Username);
 
-            var json = File.ReadAllText(Path.Combine(store.GetStickDirectory(loaded.Id), "config.json"));
+            var json = File.ReadAllText(Path.Combine(store.GetStickDirectory(loaded.Name), "config.json"));
             Assert.DoesNotContain("password", json, StringComparison.OrdinalIgnoreCase);
         }
 
@@ -57,7 +56,7 @@ namespace VirtualFido.Tests
         {
             var store = new StickConfigStore(_root);
 
-            store.Create("Mtls stick", Guid.NewGuid(), "VFIDO-0003", new MtlsSecretManagerConfig
+            store.Create("MtlsStick", "VFIDO-0003", new MtlsSecretManagerConfig
             {
                 ServerBaseAddress = new Uri("https://secrets.example.internal:5443"),
                 Username = "bob",
@@ -77,7 +76,7 @@ namespace VirtualFido.Tests
         public void LoadAll_SkipsACorruptStickFolderButStillReturnsTheOthers()
         {
             var store = new StickConfigStore(_root);
-            store.Create("Good stick", Guid.NewGuid(), "VFIDO-0004", new MemorySecretManagerConfig());
+            store.Create("GoodStick", "VFIDO-0004", new MemorySecretManagerConfig());
 
             var corruptDir = Path.Combine(_root, Guid.NewGuid().ToString());
             Directory.CreateDirectory(corruptDir);
@@ -86,31 +85,64 @@ namespace VirtualFido.Tests
             var loaded = store.LoadAll();
 
             Assert.Single(loaded);
-            Assert.Equal("Good stick", loaded[0].Name);
+            Assert.Equal("GoodStick", loaded[0].Name);
         }
 
         [Fact]
         public void GetKeyStoreDirectory_And_GetCredentialStoreDirectory_AreNestedUnderTheStickDirectory()
         {
             var store = new StickConfigStore(_root);
-            var id = Guid.NewGuid();
+            const string name = "SomeStick";
 
-            var stickDir = store.GetStickDirectory(id);
-            Assert.StartsWith(stickDir, store.GetKeyStoreDirectory(id));
-            Assert.StartsWith(stickDir, store.GetCredentialStoreDirectory(id));
-            Assert.NotEqual(store.GetKeyStoreDirectory(id), store.GetCredentialStoreDirectory(id));
+            var stickDir = store.GetStickDirectory(name);
+            Assert.StartsWith(stickDir, store.GetKeyStoreDirectory(name));
+            Assert.StartsWith(stickDir, store.GetCredentialStoreDirectory(name));
+            Assert.NotEqual(store.GetKeyStoreDirectory(name), store.GetCredentialStoreDirectory(name));
         }
 
         [Fact]
         public void Delete_RemovesTheStickFolder()
         {
             var store = new StickConfigStore(_root);
-            var created = store.Create("Doomed stick", Guid.NewGuid(), "VFIDO-0005", new MemorySecretManagerConfig());
+            var created = store.Create("DoomedStick", "VFIDO-0005", new MemorySecretManagerConfig());
 
-            store.Delete(created.Id);
+            store.Delete(created.Name);
 
             Assert.Empty(store.LoadAll());
-            Assert.False(Directory.Exists(store.GetStickDirectory(created.Id)));
+            Assert.False(Directory.Exists(store.GetStickDirectory(created.Name)));
+        }
+
+        [Theory]
+        [InlineData("")]
+        [InlineData("has space")]
+        [InlineData("has/slash")]
+        [InlineData("has\\backslash")]
+        [InlineData("this-name-is-way-too-long-for-a-folder-32")]
+        public void Create_RejectsAnInvalidName(string name)
+        {
+            var store = new StickConfigStore(_root);
+
+            Assert.Throws<ArgumentException>(() => store.Create(name, "VFIDO-0006", new MemorySecretManagerConfig()));
+        }
+
+        [Fact]
+        public void Create_RejectsADuplicateName()
+        {
+            var store = new StickConfigStore(_root);
+            store.Create("Duplicate", "VFIDO-0007", new MemorySecretManagerConfig());
+
+            Assert.Throws<ArgumentException>(() => store.Create("Duplicate", "VFIDO-0008", new MemorySecretManagerConfig()));
+        }
+
+        [Fact]
+        public void Create_AcceptsTheMaximumLength32CharacterName()
+        {
+            var store = new StickConfigStore(_root);
+            var name = new string('a', 32);
+
+            var created = store.Create(name, "VFIDO-0009", new MemorySecretManagerConfig());
+
+            Assert.Equal(name, created.Name);
         }
     }
 }

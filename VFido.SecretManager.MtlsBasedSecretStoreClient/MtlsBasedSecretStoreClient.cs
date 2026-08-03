@@ -50,6 +50,12 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreClient
             return chain.Build(certificate);
         }
 
+        public async Task<byte[]> GetAaguidAsync()
+        {
+            var response = await PostAsync<object?, GetAaguidResponse>(SecretManagerRoutes.GetAaguid, null).ConfigureAwait(false);
+            return response.Aaguid;
+        }
+
         public async Task<CredentialRegistration> CreateCredentialAsync(string rpId, byte[] userId, string userName, string userDisplayName, bool isResident, int credProtect)
         {
             var request = new CreateCredentialRequest(rpId, userId, userName, userDisplayName, isResident, credProtect);

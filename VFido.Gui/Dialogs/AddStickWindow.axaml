@@ -10,20 +10,12 @@
         <StackPanel Margin="16" Spacing="12">
             <StackPanel Spacing="4">
                 <TextBlock Text="Name"/>
-                <TextBox x:Name="NameBox"/>
+                <TextBox x:Name="NameBox" MaxLength="32" Watermark="Letters, digits, '.', '_', '-' - no spaces"/>
             </StackPanel>
 
             <StackPanel Spacing="4">
                 <TextBlock Text="Serial number"/>
                 <TextBox x:Name="SerialNumberBox"/>
-            </StackPanel>
-
-            <StackPanel Spacing="4">
-                <TextBlock Text="AAGUID"/>
-                <Grid ColumnDefinitions="*,Auto">
-                    <TextBox x:Name="AaguidBox" Grid.Column="0"/>
-                    <Button Content="Regenerate" Grid.Column="1" Margin="8,0,0,0" Click="RegenerateAaguid_Click"/>
-                </Grid>
             </StackPanel>
 
             <StackPanel x:Name="SecretManagerSection" Spacing="4">

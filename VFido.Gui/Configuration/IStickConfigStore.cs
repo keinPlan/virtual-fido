@@ -1,19 +1,20 @@
 namespace VFido.Gui.Configuration;
 
-/// <summary>Reads/writes per-stick config.json files under a VFido root directory, one subfolder per stick.</summary>
+/// <summary>Reads/writes per-stick config.json files under a VFido root directory, one subfolder per stick, named after <see cref="StickConfig.Name"/>.</summary>
 public interface IStickConfigStore
 {
     IReadOnlyList<StickConfig> LoadAll();
 
-    StickConfig Create(string name, Guid aaguid, string serialNumber, SecretManagerConfig secretManager);
+    /// <summary>Throws <see cref="ArgumentException"/> if <paramref name="name"/> isn't a valid stick name, or one is already in use.</summary>
+    StickConfig Create(string name, string serialNumber, SecretManagerConfig secretManager);
 
     void Save(StickConfig config);
 
-    void Delete(Guid id);
+    void Delete(string name);
 
-    string GetStickDirectory(Guid id);
+    string GetStickDirectory(string name);
 
-    string GetKeyStoreDirectory(Guid id);
+    string GetKeyStoreDirectory(string name);
 
-    string GetCredentialStoreDirectory(Guid id);
+    string GetCredentialStoreDirectory(string name);
 }

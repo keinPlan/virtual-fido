@@ -21,6 +21,8 @@ namespace VFido.SecretManager
             _credentials = credentials;
         }
 
+        public Task<byte[]> GetAaguidAsync() => Task.FromResult(_keys.Aaguid);
+
         public Task<CredentialRegistration> CreateCredentialAsync(string rpId, byte[] userId, string userName, string userDisplayName, bool isResident, int credProtect)
         {
             var key = _keys.CreateEs256Key();
