@@ -70,10 +70,14 @@
 
             <TextBlock x:Name="ErrorText" Foreground="IndianRed" TextWrapping="Wrap" IsVisible="False"/>
 
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-                <Button Content="Cancel" Width="80" Click="Cancel_Click"/>
-                <Button x:Name="CreateButton" Content="Create" Width="80" Click="Create_Click" IsDefault="True"/>
-            </StackPanel>
+            <Grid ColumnDefinitions="*,Auto">
+                <Button x:Name="DeleteButton" Grid.Column="0" Content="Delete" HorizontalAlignment="Left"
+                        IsVisible="False" Click="Delete_Click"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                    <Button Content="Cancel" Width="80" Click="Cancel_Click"/>
+                    <Button x:Name="CreateButton" Content="Create" Width="80" Click="Create_Click" IsDefault="True"/>
+                </StackPanel>
+            </Grid>
         </StackPanel>
     </ScrollViewer>
 </Window>

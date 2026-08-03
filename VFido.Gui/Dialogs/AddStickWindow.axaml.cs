@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using VFido.Gui.Configuration;
+using VFido.Gui.Services;
 using VFido.SecretManager.FileBasedSecretStore;
 
 namespace VFido.Gui.Dialogs;
@@ -9,14 +10,19 @@ namespace VFido.Gui.Dialogs;
 public partial class AddStickWindow : Window
 {
     private IStickConfigStore? _configStore;
+    private IStickManager? _stickManager;
     private StickConfig? _existing;
     private StickConfig? _result;
+
+    /// <summary>Set once the stick has been deleted, so the caller knows to refresh even though <see cref="_result"/> is null.</summary>
+    public bool Deleted { get; private set; }
 
     public AddStickWindow()
     {
         InitializeComponent();
+        NameBox.Text = "VFido-FileBased";
         SerialNumberBox.Text = "VFIDO-" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
-        SecretManagerTypeBox.SelectedIndex = 0;
+        SecretManagerTypeBox.SelectedIndex = 1;
     }
 
     public static async Task<StickConfig?> ShowAsync(Window owner, IStickConfigStore configStore)
@@ -31,11 +37,12 @@ public partial class AddStickWindow : Window
     /// stick's folder name) and the secret manager backend is fixed too, to avoid orphaning
     /// already-created key/credential files.
     /// </summary>
-    public static async Task<StickConfig?> EditAsync(Window owner, IStickConfigStore configStore, StickConfig existing)
+    public static async Task<(StickConfig? Result, bool Deleted)> EditAsync(Window owner, IStickConfigStore configStore, IStickManager stickManager, StickConfig existing)
     {
         var window = new AddStickWindow
         {
             _configStore = configStore,
+            _stickManager = stickManager,
             _existing = existing,
             Title = "Edit stick",
         };
@@ -46,9 +53,10 @@ public partial class AddStickWindow : Window
         window.FilePanel.IsVisible = false;
         window.MtlsPanel.IsVisible = false;
         window.CreateButton.Content = "Save";
+        window.DeleteButton.IsVisible = true;
 
         await window.ShowDialog(owner);
-        return window._result;
+        return (window._result, window.Deleted);
     }
 
     private void SecretManagerType_SelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -76,6 +84,30 @@ public partial class AddStickWindow : Window
     }
 
     private void Cancel_Click(object? sender, RoutedEventArgs e) => Close();
+
+    private async void Delete_Click(object? sender, RoutedEventArgs e)
+    {
+        var confirmed = await ConfirmWindow.ShowAsync(this, "Delete stick",
+            $"Delete stick \"{_existing!.Name}\"? Its keys and credentials will be permanently lost. This cannot be undone.");
+        if (!confirmed)
+            return;
+
+        if (_stickManager!.IsConnected(_existing.Name))
+            await _stickManager.DisconnectAsync(_existing.Name);
+
+        try
+        {
+            _configStore!.Delete(_existing.Name);
+        }
+        catch (Exception ex)
+        {
+            ShowError($"Failed to delete stick: {ex.Message}");
+            return;
+        }
+
+        Deleted = true;
+        Close();
+    }
 
     private void Create_Click(object? sender, RoutedEventArgs e)
     {

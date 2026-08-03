@@ -142,8 +142,8 @@ public partial class MainWindow : Window
 
     private async Task EditStickAsync(StickConfig stick)
     {
-        var edited = await AddStickWindow.EditAsync(this, _configStore, stick);
-        if (edited != null)
+        var (edited, deleted) = await AddStickWindow.EditAsync(this, _configStore, _stickManager, stick);
+        if (edited != null || deleted)
             RefreshStickList();
     }
 
