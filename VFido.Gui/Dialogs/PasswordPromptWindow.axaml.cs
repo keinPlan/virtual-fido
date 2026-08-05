@@ -12,16 +12,17 @@ public partial class PasswordPromptWindow : Window
         InitializeComponent();
     }
 
-    public PasswordPromptWindow(string stickName, string? prefilledUsername) : this()
+    public PasswordPromptWindow(string stickName, bool requireUsername, string? prefilledUsername) : this()
     {
         Title = $"Connect \"{stickName}\"";
         PromptText.Text = $"\"{stickName}\" needs credentials to unlock its stored keys.";
+        UsernamePanel.IsVisible = requireUsername;
         UsernameBox.Text = prefilledUsername;
     }
 
-    public static async Task<(string Username, string Password)?> ShowAsync(Window owner, string stickName, string? prefilledUsername)
+    public static async Task<(string Username, string Password)?> ShowAsync(Window owner, string stickName, bool requireUsername, string? prefilledUsername)
     {
-        var window = new PasswordPromptWindow(stickName, prefilledUsername);
+        var window = new PasswordPromptWindow(stickName, requireUsername, prefilledUsername);
         await window.ShowDialog(owner);
         return window._confirmed ? (window.UsernameBox.Text ?? string.Empty, window.PasswordBox.Text ?? string.Empty) : null;
     }

@@ -59,7 +59,6 @@ namespace VirtualFido.Tests
             store.Create("MtlsStick", "VFIDO-0003", new MtlsSecretManagerConfig
             {
                 ServerBaseAddress = new Uri("https://secrets.example.internal:5443"),
-                Username = "bob",
                 ClientCertificatePath = "client.pfx",
                 ServerCaCertificatePath = "ca.crt",
             });
@@ -67,7 +66,6 @@ namespace VirtualFido.Tests
             var loaded = Assert.Single(store.LoadAll());
             var mtlsConfig = Assert.IsType<MtlsSecretManagerConfig>(loaded.SecretManager);
             Assert.Equal("https://secrets.example.internal:5443/", mtlsConfig.ServerBaseAddress.ToString());
-            Assert.Equal("bob", mtlsConfig.Username);
             Assert.Equal("client.pfx", mtlsConfig.ClientCertificatePath);
             Assert.Equal("ca.crt", mtlsConfig.ServerCaCertificatePath);
         }

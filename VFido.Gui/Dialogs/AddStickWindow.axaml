@@ -45,10 +45,6 @@
                     <TextBox x:Name="MtlsServerAddressBox" Text="https://localhost:5443" Watermark="https://secrets.example.internal:5443"/>
                 </StackPanel>
                 <StackPanel Spacing="4">
-                    <TextBlock Text="Username"/>
-                    <TextBox x:Name="MtlsUsernameBox"/>
-                </StackPanel>
-                <StackPanel Spacing="4">
                     <TextBlock Text="Login password"/>
                     <TextBox x:Name="MtlsLoginPasswordBox" PasswordChar="*"/>
                     <TextBlock Text="Used now to test the connection - not saved, so you'll enter it again each time you Connect." Foreground="Gray" FontSize="11" TextWrapping="Wrap"/>

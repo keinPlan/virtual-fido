@@ -165,10 +165,10 @@ public partial class AddStickWindow : Window
                     ShowError("A valid server base address is required.");
                     return;
                 }
-                if (string.IsNullOrWhiteSpace(MtlsUsernameBox.Text) || string.IsNullOrEmpty(MtlsLoginPasswordBox.Text)
+                if (string.IsNullOrEmpty(MtlsLoginPasswordBox.Text)
                     || string.IsNullOrWhiteSpace(MtlsClientCertPathBox.Text) || string.IsNullOrWhiteSpace(MtlsServerCaCertPathBox.Text))
                 {
-                    ShowError("Username, login password, client certificate and server CA certificate are required.");
+                    ShowError("Login password, client certificate and server CA certificate are required.");
                     return;
                 }
 
@@ -199,7 +199,6 @@ public partial class AddStickWindow : Window
                 secretManager = new MtlsSecretManagerConfig
                 {
                     ServerBaseAddress = serverAddress,
-                    Username = MtlsUsernameBox.Text,
                     ClientCertificatePath = "certs/client.pfx",
                     ClientCertificatePassword = mtlsClientCertPassword,
                     ServerCaCertificatePath = "certs/ca.crt",

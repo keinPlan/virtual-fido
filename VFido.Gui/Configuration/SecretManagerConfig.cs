@@ -38,7 +38,6 @@ public sealed class FileSecretManagerConfig : SecretManagerConfig
 public sealed class MtlsSecretManagerConfig : SecretManagerConfig
 {
     public required Uri ServerBaseAddress { get; set; }
-    public required string Username { get; set; }
     public required string ClientCertificatePath { get; set; }
     public string? ClientCertificatePassword { get; set; }
     public required string ServerCaCertificatePath { get; set; }

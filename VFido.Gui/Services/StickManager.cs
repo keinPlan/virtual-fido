@@ -148,7 +148,7 @@ public sealed class StickManager : IStickManager
 
             case FileSecretManagerConfig fileConfig:
             {
-                var credentials = await _credentialPrompt.RequestCredentialsAsync(config.Name, fileConfig.Username);
+                var credentials = await _credentialPrompt.RequestCredentialsAsync(config.Name, requireUsername: true, fileConfig.Username);
                 if (credentials == null)
                     return null;
 
@@ -163,7 +163,7 @@ public sealed class StickManager : IStickManager
 
             case MtlsSecretManagerConfig mtlsConfig:
             {
-                var credentials = await _credentialPrompt.RequestCredentialsAsync(config.Name, mtlsConfig.Username);
+                var credentials = await _credentialPrompt.RequestCredentialsAsync(config.Name, requireUsername: false, prefilledUsername: null);
                 if (credentials == null)
                     return null;
 
