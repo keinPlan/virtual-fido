@@ -55,14 +55,13 @@ public sealed class StickManager : IStickManager
             return new StickAttachResult(StickAttachOutcome.Failed, string.Empty, $"No stored config for stick {stickName}.");
 
         IFido2SecretManager secretManager;
-        IPinStateStore? pinStateStore;
         try
         {
             var built = await BuildSecretManagerAsync(config);
             if (built == null)
                 return new StickAttachResult(StickAttachOutcome.Cancelled, string.Empty, null);
 
-            (secretManager, pinStateStore) = built.Value;
+            secretManager = built;
         }
         catch (Exception ex)
         {
@@ -78,8 +77,7 @@ public sealed class StickManager : IStickManager
             config.SerialNumberIdentifier,
             aaguid,
             new AvaloniaUserPresenceGate(config.Name),
-            secretManager,
-            pinStateStore);
+            secretManager);
 
         _server.VirtualUsbDevices.Add(deviceId, device);
 
@@ -140,12 +138,12 @@ public sealed class StickManager : IStickManager
             ? connectedStick
             : throw new InvalidOperationException($"Stick {stickName} is not connected.");
 
-    private async Task<(IFido2SecretManager SecretManager, IPinStateStore? PinStateStore)?> BuildSecretManagerAsync(StickConfig config)
+    private async Task<IFido2SecretManager?> BuildSecretManagerAsync(StickConfig config)
     {
         switch (config.SecretManager)
         {
             case MemorySecretManagerConfig:
-                return (new Fido2SecretManager(new MemoryBasedSecretStore(), new InMemoryCredentialStore()), null);
+                return new Fido2SecretManager(new MemoryBasedSecretStore(), new InMemoryCredentialStore());
 
             case FileSecretManagerConfig fileConfig:
             {
@@ -155,10 +153,11 @@ public sealed class StickManager : IStickManager
 
                 var (username, password) = credentials.Value;
                 // FileBasedSecretStore also implements IPinStateStore, persisting the PIN hash and
-                // retry counter alongside the signing keys it already protects in the same directory.
+                // retry counter alongside the signing keys it already protects in the same directory -
+                // Fido2SecretManager detects and forwards to it automatically.
                 var keyStore = new SecretManager.FileBasedSecretStore.FileBasedSecretStore(_configStore.GetKeyStoreDirectory(config.Name), username, password, _configStore.GetAttestationCertificateDirectory(config.Name), _configStore.GetStickDirectory(config.Name));
                 var credentialStore = new FileBasedCredentialStore(_configStore.GetCredentialStoreDirectory(config.Name), username, password, _configStore.GetStickDirectory(config.Name));
-                return (new Fido2SecretManager(keyStore, credentialStore), keyStore);
+                return new Fido2SecretManager(keyStore, credentialStore);
             }
 
             case MtlsSecretManagerConfig mtlsConfig:
@@ -173,14 +172,14 @@ public sealed class StickManager : IStickManager
                     ResolvePath(stickDirectory, mtlsConfig.ClientCertificatePath), mtlsConfig.ClientCertificatePassword);
                 var serverCaCertificate = new X509Certificate2(ResolvePath(stickDirectory, mtlsConfig.ServerCaCertificatePath));
 
-                return (new MtlsBasedSecretStoreClient(new MtlsBasedSecretStoreClientOptions
+                return new MtlsBasedSecretStoreClient(new MtlsBasedSecretStoreClientOptions
                 {
                     ServerBaseAddress = mtlsConfig.ServerBaseAddress,
                     ClientCertificate = clientCertificate,
                     ServerCaCertificate = serverCaCertificate,
                     Username = username,
                     Password = password,
-                }), null);
+                });
             }
 
             default:

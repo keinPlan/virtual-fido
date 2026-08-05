@@ -44,5 +44,11 @@ namespace VFido.SecretManager
 
         /// <summary>Signs <paramref name="data"/> (typically authenticatorData || clientDataHash) with the leaf attestation key backing <see cref="GetAttestationCertificateChainAsync"/>.</summary>
         Task<byte[]> SignWithAttestationKeyAsync(byte[] data);
+
+        /// <summary>The PIN hash and retry counter last saved via <see cref="SavePinStateAsync"/>, or null if no PIN has been set yet. An implementation with no durable backing may always return null, in which case PIN state stays process-lifetime only.</summary>
+        Task<PinState?> LoadPinStateAsync();
+
+        /// <summary>Persists the PIN hash and retry counter so they survive a reconnect/restart.</summary>
+        Task SavePinStateAsync(PinState state);
     }
 }

@@ -38,6 +38,18 @@ namespace VFido.SecretManager.FileBasedSecretStore
             PasswordVerifier.EnsureOrVerify(_authDirectory, _aesKey, isNewStore);
         }
 
+        /// <summary>Counterpart to <see cref="FileBasedSecretStore(string, byte[], string?, string?)"/> for passwordless identities - see its remarks.</summary>
+        public FileBasedCredentialStore(string directory, byte[] aesKey, string? authDirectory = null)
+        {
+            _directory = directory;
+            Directory.CreateDirectory(_directory);
+
+            _authDirectory = authDirectory ?? directory;
+            Directory.CreateDirectory(_authDirectory);
+
+            _aesKey = aesKey;
+        }
+
         public void Save(StoredCredential credential)
         {
             var plaintext = JsonSerializer.SerializeToUtf8Bytes(credential);

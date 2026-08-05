@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\VFido.Gui\VFido.Gui.csproj" />
+    <ProjectReference Include="..\VFido.SecretManager.MtlsBasedSecretStoreServer\VFido.SecretManager.MtlsBasedSecretStoreServer.csproj" />
   </ItemGroup>
 
 </Project>

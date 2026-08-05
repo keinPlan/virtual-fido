@@ -15,5 +15,7 @@ namespace VFido.SecretManager
         public const string GetAaguid = "/api/secretmanager/aaguid";
         public const string GetAttestationCertificate = "/api/secretmanager/attestation/certificate";
         public const string SignWithAttestationKey = "/api/secretmanager/attestation/sign";
+        public const string GetPinState = "/api/secretmanager/pin/state";
+        public const string SavePinState = "/api/secretmanager/pin/state/save";
     }
 }

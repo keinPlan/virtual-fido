@@ -46,6 +46,11 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreClient
             chain.ChainPolicy.CustomTrustStore.Clear();
             chain.ChainPolicy.CustomTrustStore.Add(_options.ServerCaCertificate);
             chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+            // "ServerCaCertificate" is the intermediate CA (see CaManager), not a self-signed root -
+            // its own issuer (the offline root) is deliberately never distributed to clients, so chain
+            // building would otherwise report the intermediate's issuer as unknown even though the
+            // intermediate itself is the trusted anchor.
+            chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
 
             return chain.Build(certificate);
         }
@@ -121,6 +126,15 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreClient
             var response = await PostAsync<SignWithAttestationKeyRequest, SignWithAttestationKeyResponse>(SecretManagerRoutes.SignWithAttestationKey, request).ConfigureAwait(false);
             return response.Signature;
         }
+
+        public async Task<PinState?> LoadPinStateAsync()
+        {
+            var response = await PostAsync<object?, GetPinStateResponse>(SecretManagerRoutes.GetPinState, null).ConfigureAwait(false);
+            return response.State;
+        }
+
+        public async Task SavePinStateAsync(PinState state) =>
+            await PostAsync<SavePinStateRequest, SavePinStateResponse>(SecretManagerRoutes.SavePinState, new SavePinStateRequest(state)).ConfigureAwait(false);
 
         private async Task<TResponse> PostAsync<TRequest, TResponse>(string route, TRequest body)
         {

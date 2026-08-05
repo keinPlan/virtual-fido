@@ -17,8 +17,8 @@ namespace VirtualFido.Tests
     /// </summary>
     public class AttestationTests
     {
-        private static Fido2Authenticator NewAuthenticator() =>
-            new(new Fido2SecretManager(new MemoryBasedSecretStore(), new InMemoryCredentialStore()),
+        private static Task<Fido2Authenticator> NewAuthenticatorAsync() =>
+            Fido2Authenticator.CreateAsync(new Fido2SecretManager(new MemoryBasedSecretStore(), new InMemoryCredentialStore()),
                 aaguid: Guid.NewGuid().ToByteArray());
 
         private static MakeCredentialRequest NewMakeCredentialRequest() => new(
@@ -34,7 +34,7 @@ namespace VirtualFido.Tests
         [Fact]
         public async Task MakeCredential_AttestsWithIntermediateIssuedLeafCertificate_AndSignatureVerifiesAgainstIt()
         {
-            var authenticator = NewAuthenticator();
+            var authenticator = await NewAuthenticatorAsync();
             var request = NewMakeCredentialRequest();
 
             var result = await authenticator.MakeCredentialAsync(request);
@@ -60,7 +60,7 @@ namespace VirtualFido.Tests
         [Fact]
         public async Task MakeCredential_TwoCredentials_ShareTheSameAttestationChain()
         {
-            var authenticator = NewAuthenticator();
+            var authenticator = await NewAuthenticatorAsync();
 
             var first = await authenticator.MakeCredentialAsync(NewMakeCredentialRequest());
             var second = await authenticator.MakeCredentialAsync(NewMakeCredentialRequest());
@@ -73,7 +73,7 @@ namespace VirtualFido.Tests
         {
             var keyStore = new MemoryBasedSecretStore();
             var secrets = new Fido2SecretManager(keyStore, new InMemoryCredentialStore());
-            var authenticator = new Fido2Authenticator(secrets, await secrets.GetAaguidAsync());
+            var authenticator = await Fido2Authenticator.CreateAsync(secrets, await secrets.GetAaguidAsync());
 
             var result = await authenticator.MakeCredentialAsync(NewMakeCredentialRequest());
 

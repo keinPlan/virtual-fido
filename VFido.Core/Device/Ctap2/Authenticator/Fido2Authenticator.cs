@@ -28,12 +28,23 @@ namespace VFido.Core.Device.Ctap2.Authenticator
         private byte[]? _pendingClientDataHash;
         private bool _pendingUserVerified;
 
-        internal Fido2Authenticator(IFido2SecretManager secrets, byte[] aaguid, IUserPresenceGate? presence = null, IPinStateStore? pinStateStore = null)
+        private Fido2Authenticator(IFido2SecretManager secrets, byte[] aaguid, PinManager pin, IUserPresenceGate? presence)
         {
             _secrets = secrets;
-            _pin = new PinManager(pinStateStore);
+            _pin = pin;
             _aaguid = aaguid;
             _presence = presence ?? AlwaysApproveUserPresenceGate.Instance;
+        }
+
+        /// <summary>
+        /// Loading PIN state (see <see cref="PinManager.CreateAsync"/>) may involve a network round
+        /// trip, so construction is async - callers must await this rather than using a constructor,
+        /// since authenticatorGetInfo needs <see cref="IsPinSet"/> correct from the very first command.
+        /// </summary>
+        internal static async Task<Fido2Authenticator> CreateAsync(IFido2SecretManager secrets, byte[] aaguid, IUserPresenceGate? presence = null)
+        {
+            var pin = await PinManager.CreateAsync(secrets).ConfigureAwait(false);
+            return new Fido2Authenticator(secrets, aaguid, pin, presence);
         }
 
         public bool IsPinSet => _pin.IsPinSet;
@@ -174,15 +185,15 @@ namespace VFido.Core.Device.Ctap2.Authenticator
             return new GetAssertionResult(credential.CredentialId, authenticatorData, signature, user, numberOfCredentials, includeUserDetails);
         }
 
-        public Task<ClientPinResult> ClientPinAsync(ClientPinRequest request) => Task.FromResult(request.SubCommand switch
+        public async Task<ClientPinResult> ClientPinAsync(ClientPinRequest request) => request.SubCommand switch
         {
             1 => new ClientPinResult(PinRetries: _pin.Retries), // getPinRetries
             2 => new ClientPinResult(KeyAgreementPublicKey: _pin.GetOrCreateKeyAgreementPublicKey()), // getKeyAgreement
-            3 => HandleSetPin(request),
-            4 => HandleChangePin(request),
-            5 => HandleGetPinToken(request),
+            3 => await HandleSetPinAsync(request).ConfigureAwait(false),
+            4 => await HandleChangePinAsync(request).ConfigureAwait(false),
+            5 => await HandleGetPinTokenAsync(request).ConfigureAwait(false),
             _ => throw new Ctap2Exception(Ctap2Constants.Ctap1ErrInvalidCommand),
-        });
+        };
 
         /// <summary>
         /// Once a PIN is set, every MakeCredential/GetAssertion must prove UV via a valid
@@ -245,31 +256,31 @@ namespace VFido.Core.Device.Ctap2.Authenticator
             return true;
         }
 
-        private ClientPinResult HandleSetPin(ClientPinRequest request)
+        private async Task<ClientPinResult> HandleSetPinAsync(ClientPinRequest request)
         {
             if (request.KeyAgreement is not { } keyAgreement || request.PinUvAuthParam is not { } pinUvAuthParam || request.NewPinEnc is not { } newPinEnc)
                 throw new Ctap2Exception(Ctap2Constants.Ctap2ErrMissingParameter);
 
-            _pin.SetPin(keyAgreement, pinUvAuthParam, newPinEnc);
+            await _pin.SetPinAsync(keyAgreement, pinUvAuthParam, newPinEnc).ConfigureAwait(false);
             return new ClientPinResult();
         }
 
-        private ClientPinResult HandleChangePin(ClientPinRequest request)
+        private async Task<ClientPinResult> HandleChangePinAsync(ClientPinRequest request)
         {
             if (request.KeyAgreement is not { } keyAgreement || request.PinUvAuthParam is not { } pinUvAuthParam
                 || request.NewPinEnc is not { } newPinEnc || request.PinHashEnc is not { } pinHashEnc)
                 throw new Ctap2Exception(Ctap2Constants.Ctap2ErrMissingParameter);
 
-            _pin.ChangePin(keyAgreement, pinUvAuthParam, newPinEnc, pinHashEnc);
+            await _pin.ChangePinAsync(keyAgreement, pinUvAuthParam, newPinEnc, pinHashEnc).ConfigureAwait(false);
             return new ClientPinResult();
         }
 
-        private ClientPinResult HandleGetPinToken(ClientPinRequest request)
+        private async Task<ClientPinResult> HandleGetPinTokenAsync(ClientPinRequest request)
         {
             if (request.KeyAgreement is not { } keyAgreement || request.PinHashEnc is not { } pinHashEnc)
                 throw new Ctap2Exception(Ctap2Constants.Ctap2ErrMissingParameter);
 
-            var pinUvAuthTokenEnc = _pin.GetPinToken(keyAgreement, pinHashEnc);
+            var pinUvAuthTokenEnc = await _pin.GetPinTokenAsync(keyAgreement, pinHashEnc).ConfigureAwait(false);
             return new ClientPinResult(PinUvAuthTokenEnc: pinUvAuthTokenEnc);
         }
 

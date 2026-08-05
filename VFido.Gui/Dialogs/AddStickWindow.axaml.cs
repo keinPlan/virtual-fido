@@ -1,9 +1,11 @@
+using System.Security.Cryptography.X509Certificates;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using VFido.Gui.Configuration;
 using VFido.Gui.Services;
 using VFido.SecretManager.FileBasedSecretStore;
+using VFido.SecretManager.MtlsBasedSecretStoreClient;
 
 namespace VFido.Gui.Dialogs;
 
@@ -109,7 +111,7 @@ public partial class AddStickWindow : Window
         Close();
     }
 
-    private void Create_Click(object? sender, RoutedEventArgs e)
+    private async void Create_Click(object? sender, RoutedEventArgs e)
     {
         if (_existing == null && !StickConfigStore.IsValidStickName(NameBox.Text))
         {
@@ -138,6 +140,8 @@ public partial class AddStickWindow : Window
 
         SecretManagerConfig secretManager;
         string? filePassword = null;
+        string? mtlsClientCertSourcePath = null;
+        string? mtlsServerCaCertSourcePath = null;
 
         switch (SecretManagerTypeBox.SelectedIndex)
         {
@@ -161,18 +165,44 @@ public partial class AddStickWindow : Window
                     ShowError("A valid server base address is required.");
                     return;
                 }
-                if (string.IsNullOrWhiteSpace(MtlsUsernameBox.Text) || string.IsNullOrWhiteSpace(MtlsClientCertPathBox.Text) || string.IsNullOrWhiteSpace(MtlsServerCaCertPathBox.Text))
+                if (string.IsNullOrWhiteSpace(MtlsUsernameBox.Text) || string.IsNullOrEmpty(MtlsLoginPasswordBox.Text)
+                    || string.IsNullOrWhiteSpace(MtlsClientCertPathBox.Text) || string.IsNullOrWhiteSpace(MtlsServerCaCertPathBox.Text))
                 {
-                    ShowError("Username, client certificate and server CA certificate are required.");
+                    ShowError("Username, login password, client certificate and server CA certificate are required.");
                     return;
                 }
+
+                mtlsClientCertSourcePath = MtlsClientCertPathBox.Text;
+                mtlsServerCaCertSourcePath = MtlsServerCaCertPathBox.Text;
+                var mtlsClientCertPassword = string.IsNullOrEmpty(MtlsClientCertPasswordBox.Text) ? null : MtlsClientCertPasswordBox.Text;
+
+                CreateButton.IsEnabled = false;
+                ErrorText.IsVisible = false;
+                try
+                {
+                    // Tested against the originally picked paths, before anything is copied or
+                    // persisted - a bad cert/password/unreachable server leaves the dialog exactly
+                    // as the user left it, with nothing created.
+                    await TestMtlsConnectionAsync(serverAddress, MtlsUsernameBox.Text!, MtlsLoginPasswordBox.Text!,
+                        mtlsClientCertSourcePath, mtlsClientCertPassword, mtlsServerCaCertSourcePath);
+                }
+                catch (Exception ex)
+                {
+                    ShowError($"Could not connect: {ex.Message}");
+                    return;
+                }
+                finally
+                {
+                    CreateButton.IsEnabled = true;
+                }
+
                 secretManager = new MtlsSecretManagerConfig
                 {
                     ServerBaseAddress = serverAddress,
                     Username = MtlsUsernameBox.Text,
-                    ClientCertificatePath = MtlsClientCertPathBox.Text,
-                    ClientCertificatePassword = string.IsNullOrEmpty(MtlsClientCertPasswordBox.Text) ? null : MtlsClientCertPasswordBox.Text,
-                    ServerCaCertificatePath = MtlsServerCaCertPathBox.Text,
+                    ClientCertificatePath = "certs/client.pfx",
+                    ClientCertificatePassword = mtlsClientCertPassword,
+                    ServerCaCertificatePath = "certs/ca.crt",
                 };
                 break;
 
@@ -193,6 +223,17 @@ public partial class AddStickWindow : Window
                 _ = new FileBasedSecretStore(_configStore.GetKeyStoreDirectory(_result.Name), FileUsernameBox.Text!, filePassword, _configStore.GetAttestationCertificateDirectory(_result.Name), _configStore.GetStickDirectory(_result.Name));
                 _ = new FileBasedCredentialStore(_configStore.GetCredentialStoreDirectory(_result.Name), FileUsernameBox.Text!, filePassword, _configStore.GetStickDirectory(_result.Name));
             }
+
+            // Now that the connection has already been verified against these exact files, copy
+            // them into the stick's own folder so it stays self-contained (same as the file-based
+            // backend) instead of depending on wherever the originals happen to live on disk.
+            if (mtlsClientCertSourcePath != null)
+            {
+                var certsDirectory = _configStore.GetAttestationCertificateDirectory(_result.Name);
+                Directory.CreateDirectory(certsDirectory);
+                File.Copy(mtlsClientCertSourcePath, Path.Combine(certsDirectory, "client.pfx"), overwrite: true);
+                File.Copy(mtlsServerCaCertSourcePath!, Path.Combine(certsDirectory, "ca.crt"), overwrite: true);
+            }
         }
         catch (Exception ex)
         {
@@ -201,6 +242,29 @@ public partial class AddStickWindow : Window
         }
 
         Close();
+    }
+
+    /// <summary>Exercises cert loading, the TLS handshake/CA trust, and login in one call - <see cref="MtlsBasedSecretStoreClient"/> logs in transparently on its first request.</summary>
+    private static async Task TestMtlsConnectionAsync(Uri serverAddress, string username, string password, string clientCertPath, string? clientCertPassword, string serverCaCertPath)
+    {
+        using var clientCertificate = new X509Certificate2(clientCertPath, clientCertPassword);
+        using var serverCaCertificate = new X509Certificate2(serverCaCertPath);
+
+        using var client = new MtlsBasedSecretStoreClient(new MtlsBasedSecretStoreClientOptions
+        {
+            ServerBaseAddress = serverAddress,
+            ClientCertificate = clientCertificate,
+            ServerCaCertificate = serverCaCertificate,
+            Username = username,
+            Password = password,
+        });
+
+        var timeout = Task.Delay(TimeSpan.FromSeconds(10));
+        var attempt = client.GetAaguidAsync();
+        if (await Task.WhenAny(attempt, timeout) == timeout)
+            throw new TimeoutException("The server did not respond within 10 seconds.");
+
+        await attempt; // observe/rethrow any failure now that we know it already completed
     }
 
     private void ShowError(string message)

@@ -19,8 +19,8 @@ namespace VirtualFido.Tests
     /// </summary>
     public class CredProtectTests
     {
-        private static Fido2Authenticator NewAuthenticator() =>
-            new(new Fido2SecretManager(new MemoryBasedSecretStore(), new InMemoryCredentialStore()),
+        private static Task<Fido2Authenticator> NewAuthenticatorAsync() =>
+            Fido2Authenticator.CreateAsync(new Fido2SecretManager(new MemoryBasedSecretStore(), new InMemoryCredentialStore()),
                 aaguid: Guid.NewGuid().ToByteArray());
 
         private static MakeCredentialRequest NewMakeCredentialRequest(int? credProtect, bool requireResidentKey = true, bool requireUserVerification = false, byte[]? pinUvAuthParam = null) => new(
@@ -99,7 +99,7 @@ namespace VirtualFido.Tests
         [Fact]
         public async Task MakeCredential_CredProtectNotRequested_DefaultsToLevel1AndOmitsExtensionOutput()
         {
-            var authenticator = NewAuthenticator();
+            var authenticator = await NewAuthenticatorAsync();
 
             var result = await authenticator.MakeCredentialAsync(NewMakeCredentialRequest(credProtect: null));
 
@@ -109,7 +109,7 @@ namespace VirtualFido.Tests
         [Fact]
         public async Task MakeCredential_CredProtectRequested_EchoesLevelInExtensionOutput()
         {
-            var authenticator = NewAuthenticator();
+            var authenticator = await NewAuthenticatorAsync();
 
             var result = await authenticator.MakeCredentialAsync(NewMakeCredentialRequest(credProtect: 2));
 
@@ -119,7 +119,7 @@ namespace VirtualFido.Tests
         [Fact]
         public async Task MakeCredential_CredProtectLevel3_NoPinSet_RequiresPinRegardlessOfRequest()
         {
-            var authenticator = NewAuthenticator();
+            var authenticator = await NewAuthenticatorAsync();
 
             var ex = await Assert.ThrowsAsync<Ctap2Exception>(
                 () => authenticator.MakeCredentialAsync(NewMakeCredentialRequest(credProtect: 3, requireUserVerification: false)));
@@ -130,7 +130,7 @@ namespace VirtualFido.Tests
         [Fact]
         public async Task GetAssertion_CredProtectLevel2_ViaExplicitAllowList_DoesNotRequireUv()
         {
-            var authenticator = NewAuthenticator();
+            var authenticator = await NewAuthenticatorAsync();
             var created = await authenticator.MakeCredentialAsync(NewMakeCredentialRequest(credProtect: 2));
             var credentialId = ExtractCredentialId(created.AuthenticatorData);
 
@@ -143,7 +143,7 @@ namespace VirtualFido.Tests
         [Fact]
         public async Task GetAssertion_CredProtectLevel2_ViaEmptyAllowListDiscovery_RequiresUv()
         {
-            var authenticator = NewAuthenticator();
+            var authenticator = await NewAuthenticatorAsync();
             await authenticator.MakeCredentialAsync(NewMakeCredentialRequest(credProtect: 2));
 
             var ex = await Assert.ThrowsAsync<Ctap2Exception>(() => authenticator.GetAssertionAsync(new GetAssertionRequest(
@@ -156,7 +156,7 @@ namespace VirtualFido.Tests
         public async Task GetAssertion_CredProtectLevel3_EvenViaExplicitAllowList_RequiresUv()
         {
             // Level 3 forces UV at creation too, so a PIN must already be set to create it at all.
-            var authenticator = NewAuthenticator();
+            var authenticator = await NewAuthenticatorAsync();
             await SetPinAsync(authenticator, "1234");
             var pinToken = await GetPinTokenAsync(authenticator, "1234");
             var clientDataHash = new byte[32];

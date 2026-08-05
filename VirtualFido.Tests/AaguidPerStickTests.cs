@@ -33,7 +33,7 @@ namespace VirtualFido.Tests
         private static async Task<Fido2Authenticator> NewAuthenticatorAsync()
         {
             var secrets = new Fido2SecretManager(new MemoryBasedSecretStore(), new InMemoryCredentialStore());
-            return new Fido2Authenticator(secrets, await secrets.GetAaguidAsync());
+            return await Fido2Authenticator.CreateAsync(secrets, await secrets.GetAaguidAsync());
         }
 
         [Fact]

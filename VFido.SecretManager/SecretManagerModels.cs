@@ -31,4 +31,9 @@ namespace VFido.SecretManager
     public sealed record SignWithAttestationKeyResponse(byte[] Signature);
 
     public sealed record GetAaguidResponse(byte[] Aaguid);
+
+    public sealed record GetPinStateResponse(PinState? State);
+
+    public sealed record SavePinStateRequest(PinState State);
+    public sealed record SavePinStateResponse();
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Security.Cryptography;
+using System.Threading.Tasks;
 using VFido.Core.Device.Ctap2.Errors;
 using VFido.SecretManager;
 
@@ -9,30 +10,42 @@ namespace VFido.Core.Device.Ctap2.Authenticator.Pin
     /// PIN/UV Auth Protocol One state for one authenticator instance: the ephemeral key-agreement
     /// keypair, the stored PIN hash, retry counter, and the current pinUvAuthToken. The key-agreement
     /// keypair and token are always session-only (CTAP2 expects a fresh handshake each time anyway);
-    /// the PIN hash and retry counter are persisted via the optional IPinStateStore, so a stick
-    /// backed by one (e.g. file-based) remembers its PIN across reconnects/restarts instead of
-    /// resetting every time like a purely in-memory stick does.
+    /// the PIN hash and retry counter are persisted through the secret manager (see
+    /// <see cref="IFido2SecretManager.LoadPinStateAsync"/>/<see cref="IFido2SecretManager.SavePinStateAsync"/>),
+    /// so a stick backed by a durable one (e.g. file-based or the mTLS server) remembers its PIN
+    /// across reconnects/restarts instead of resetting every time like a purely in-memory stick does.
     /// </summary>
     internal class PinManager
     {
         private const int MaxRetries = 8;
 
-        private readonly IPinStateStore? _store;
+        private readonly IFido2SecretManager? _secrets;
 
         private ECDiffieHellman? _keyAgreementKey;
         private byte[]? _pinHash; // left 16 bytes of SHA-256(pin)
         private byte[]? _pinToken;
         private int _retries = MaxRetries;
 
-        internal PinManager(IPinStateStore? store = null)
+        private PinManager(IFido2SecretManager? secrets, PinState? saved)
         {
-            _store = store;
+            _secrets = secrets;
 
-            if (_store?.Load() is { } saved)
+            if (saved is { } state)
             {
-                _pinHash = saved.PinHash;
-                _retries = saved.Retries;
+                _pinHash = state.PinHash;
+                _retries = state.Retries;
             }
+        }
+
+        /// <summary>
+        /// Loading PIN state may involve a network round trip (the mTLS secret manager), so this must
+        /// complete before the authenticator processes its first CTAP2 command - authenticatorGetInfo
+        /// reports <see cref="IsPinSet"/> synchronously and can't tolerate it lagging behind.
+        /// </summary>
+        internal static async Task<PinManager> CreateAsync(IFido2SecretManager? secrets)
+        {
+            var saved = secrets != null ? await secrets.LoadPinStateAsync().ConfigureAwait(false) : null;
+            return new PinManager(secrets, saved);
         }
 
         internal bool IsPinSet => _pinHash != null;
@@ -49,7 +62,7 @@ namespace VFido.Core.Device.Ctap2.Authenticator.Pin
             return _keyAgreementKey.ExportParameters(includePrivateParameters: false);
         }
 
-        internal void SetPin(ECParameters platformPublicKey, byte[] pinUvAuthParam, byte[] newPinEnc)
+        internal async Task SetPinAsync(ECParameters platformPublicKey, byte[] pinUvAuthParam, byte[] newPinEnc)
         {
             if (IsPinSet)
                 throw new Ctap2Exception(Ctap2Constants.Ctap2ErrPinAuthInvalid); // use changePIN instead
@@ -59,31 +72,31 @@ namespace VFido.Core.Device.Ctap2.Authenticator.Pin
 
             _pinHash = ComputePinHash(DecodePin(sharedSecret, newPinEnc));
             _retries = MaxRetries;
-            Persist();
+            await PersistAsync().ConfigureAwait(false);
         }
 
-        internal void ChangePin(ECParameters platformPublicKey, byte[] pinUvAuthParam, byte[] newPinEnc, byte[] pinHashEnc)
+        internal async Task ChangePinAsync(ECParameters platformPublicKey, byte[] pinUvAuthParam, byte[] newPinEnc, byte[] pinHashEnc)
         {
             EnsurePinSetAndUnlocked();
 
             var sharedSecret = DeriveSharedSecret(platformPublicKey);
             VerifyAuthParam(sharedSecret, Combine(newPinEnc, pinHashEnc), pinUvAuthParam);
-            VerifyPinHash(sharedSecret, pinHashEnc);
+            await VerifyPinHashAsync(sharedSecret, pinHashEnc).ConfigureAwait(false);
 
             _pinHash = ComputePinHash(DecodePin(sharedSecret, newPinEnc));
             _retries = MaxRetries;
-            Persist();
+            await PersistAsync().ConfigureAwait(false);
         }
 
-        internal byte[] GetPinToken(ECParameters platformPublicKey, byte[] pinHashEnc)
+        internal async Task<byte[]> GetPinTokenAsync(ECParameters platformPublicKey, byte[] pinHashEnc)
         {
             EnsurePinSetAndUnlocked();
 
             var sharedSecret = DeriveSharedSecret(platformPublicKey);
-            VerifyPinHash(sharedSecret, pinHashEnc);
+            await VerifyPinHashAsync(sharedSecret, pinHashEnc).ConfigureAwait(false);
 
             _retries = MaxRetries;
-            Persist();
+            await PersistAsync().ConfigureAwait(false);
             _pinToken = RandomNumberGenerator.GetBytes(32);
             return PinProtocolOne.Encrypt(sharedSecret, _pinToken);
         }
@@ -116,7 +129,7 @@ namespace VFido.Core.Device.Ctap2.Authenticator.Pin
                 throw new Ctap2Exception(Ctap2Constants.Ctap2ErrPinAuthInvalid);
         }
 
-        private void VerifyPinHash(byte[] sharedSecret, byte[] pinHashEnc)
+        private async Task VerifyPinHashAsync(byte[] sharedSecret, byte[] pinHashEnc)
         {
             var providedHash = PinProtocolOne.Decrypt(sharedSecret, pinHashEnc);
             if (CryptographicOperations.FixedTimeEquals(providedHash, _pinHash!))
@@ -124,14 +137,18 @@ namespace VFido.Core.Device.Ctap2.Authenticator.Pin
 
             _retries--;
             // Persisted immediately - a restart must not silently reset a locked-out PIN's retries.
-            Persist();
+            await PersistAsync().ConfigureAwait(false);
             // Force a fresh getKeyAgreement handshake before the next attempt, as CTAP2 requires.
             _keyAgreementKey?.Dispose();
             _keyAgreementKey = null;
             throw new Ctap2Exception(Ctap2Constants.Ctap2ErrPinInvalid);
         }
 
-        private void Persist() => _store?.Save(new PinState(_pinHash!, _retries));
+        private async Task PersistAsync()
+        {
+            if (_secrets != null)
+                await _secrets.SavePinStateAsync(new PinState(_pinHash!, _retries)).ConfigureAwait(false);
+        }
 
         private void EnsurePinSetAndUnlocked()
         {

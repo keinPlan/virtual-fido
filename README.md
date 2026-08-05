@@ -9,7 +9,7 @@ VirtualFido is a Windows software FIDO2/CTAP2 security key. It emulates a USB se
 - **VFido.SecretManager** defines the credential/secret storage abstraction, with pluggable backends:
   - `VFido.SecretManager.MemoryBasedSecretStore` — in-memory, non-persistent.
   - `VFido.SecretManager.FileBasedSecretStore` — encrypted on-disk storage.
-  - `VFido.SecretManager.MtlsBasedSecretStoreClient` / `...Server` — remote secret storage over mutual-TLS, allowing credentials to be kept on a separate machine/service.
+  - `VFido.SecretManager.MtlsBasedSecretStoreClient` / `...Server` — remote secret storage over mutual-TLS, allowing credentials to be kept on a separate machine/service. The server runs its own CA (`Pki/CaManager`) and issues each user a client certificate; the certificate's CN identifies the user, and password-protected users additionally authenticate with a bearer session token on top of the mTLS handshake. Provisioning (CA init, user creation/revocation) is done via the server's admin CLI (`Cli/AdminCommands`, e.g. `init`, `create-user`, `revoke-user`).
 - **VirtualFido.Tests** contains the test suite.
 
 ## Requirements
@@ -34,6 +34,24 @@ dotnet run --project VFido.Gui
 
 ```powershell
 dotnet test
+```
+
+## Running the mTLS secret store server
+
+`VFido.SecretManager.MtlsBasedSecretStoreServer` is an optional standalone service for keeping credentials on a separate machine, accessed over mutual TLS. Configuration lives in its `appsettings.json` under the `MtlsBasedSecretStoreServer` section (listen port, certificate paths, PKI/secrets root directories, session token lifetime).
+
+```powershell
+# One-time: generate the CA, server certificate, and master protection certificate
+dotnet run --project VFido.SecretManager.MtlsBasedSecretStoreServer -- init
+
+# Provision a user (mTLS client certificate + optional login password)
+dotnet run --project VFido.SecretManager.MtlsBasedSecretStoreServer -- create-user <username> [--no-password]
+
+# Revoke a previously issued client certificate
+dotnet run --project VFido.SecretManager.MtlsBasedSecretStoreServer -- revoke-user <username>
+
+# Start the server
+dotnet run --project VFido.SecretManager.MtlsBasedSecretStoreServer
 ```
 
 ## Project layout

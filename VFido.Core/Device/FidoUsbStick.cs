@@ -19,25 +19,27 @@ namespace VFido.Core.Device
     internal class FidoUsbStick : VirtualUsbDevice
     {
         private NLog.Logger logger = LogManager.GetCurrentClassLogger();
-        private readonly Ctap2.Authenticator.IAuthenticator _authenticator;
+        private readonly Task<Ctap2.Authenticator.IAuthenticator> _authenticator;
 
         public FidoUsbStick(int deviceID,
             string? serialNumber = null,
             byte[]? aaguid = null,
             Ctap2.Authenticator.IUserPresenceGate? presenceGate = null,
-            IFido2SecretManager? secretManager = null,
-            IPinStateStore? pinStateStore = null) : base(deviceID)
+            IFido2SecretManager? secretManager = null) : base(deviceID)
         {
             serialNumber ??= "VFIDO-" + deviceID.ToString("X8");
             aaguid ??= DefaultAaguid(deviceID);
 
-            _authenticator = new Ctap2.Authenticator.Fido2Authenticator(
+            // Construction here must stay synchronous (many callers new this up directly), but
+            // building the authenticator is async - loading PIN state may be a network round trip
+            // for a remote secret manager. Kick it off now and await it on first use instead: it'll
+            // have settled long before AttachAsync lets any CTAP2 traffic reach HandleCtapMessage.
+            _authenticator = CreateAuthenticatorAsync(
                 secretManager ?? new Fido2SecretManager(
                     new VFido.SecretManager.MemoryBasedSecretStore.MemoryBasedSecretStore(),
                     new VFido.SecretManager.MemoryBasedSecretStore.InMemoryCredentialStore()),
                 aaguid,
-                presenceGate,
-                pinStateStore);
+                presenceGate);
 
             base.UsbDescriptor_Device = new UsbTypes.USB_DEVICE_DESCRIPTOR()
             {
@@ -123,6 +125,10 @@ namespace VFido.Core.Device
             };
         }
 
+        private static async Task<Ctap2.Authenticator.IAuthenticator> CreateAuthenticatorAsync(
+            IFido2SecretManager secretManager, byte[] aaguid, Ctap2.Authenticator.IUserPresenceGate? presenceGate) =>
+            await Ctap2.Authenticator.Fido2Authenticator.CreateAsync(secretManager, aaguid, presenceGate);
+
         /// <summary>Deterministic 16-byte AAGUID fallback for callers (mainly tests) that don't configure a real per-stick identity.</summary>
         private static byte[] DefaultAaguid(int deviceID)
         {
@@ -140,7 +146,8 @@ namespace VFido.Core.Device
                 byte[] response;
                 using (StartKeepAlive(cid))
                 {
-                    response = await Ctap2.Ctap2Dispatcher.Handle(payload, _authenticator);
+                    var authenticator = await _authenticator;
+                    response = await Ctap2.Ctap2Dispatcher.Handle(payload, authenticator);
                 }
                 logger.Debug(() => $"CTAP2 cid={cid:X8} status={response[0]:X2} responseLen={response.Length}");
                 SendCtapResponse(cid, CtapHidConstants.CTAPHID_CBOR, response);

@@ -60,6 +60,25 @@ namespace VFido.SecretManager.FileBasedSecretStore
             PasswordVerifier.EnsureOrVerify(_authDirectory, _aesKey, isNewStore);
         }
 
+        /// <summary>
+        /// For identities with no login password (the key comes from elsewhere - e.g. a
+        /// Data-Protection-wrapped random key) there's no username/password to derive from or
+        /// verify against; the caller already owns the trust decision for <paramref name="aesKey"/>.
+        /// </summary>
+        public FileBasedSecretStore(string directory, byte[] aesKey, string? attestationDirectory = null, string? authDirectory = null)
+        {
+            _directory = directory;
+            Directory.CreateDirectory(_directory);
+
+            _attestationDirectory = attestationDirectory ?? directory;
+            Directory.CreateDirectory(_attestationDirectory);
+
+            _authDirectory = authDirectory ?? directory;
+            Directory.CreateDirectory(_authDirectory);
+
+            _aesKey = aesKey;
+        }
+
         public ISigningKey CreateEs256Key()
         {
             var ecdsa = Crypto.EcdsaProvider.GenerateP256();

@@ -14,11 +14,16 @@ namespace VFido.SecretManager
     {
         private readonly IKeyStore _keys;
         private readonly ICredentialStore _credentials;
+        private readonly IPinStateStore? _pinState;
 
         public Fido2SecretManager(IKeyStore keys, ICredentialStore credentials)
         {
             _keys = keys;
             _credentials = credentials;
+            // FileBasedSecretStore (the only IKeyStore that persists) implements IPinStateStore too -
+            // detecting it here means PIN persistence "just works" for any IKeyStore that opts in,
+            // without every caller having to thread a separate store through by hand.
+            _pinState = keys as IPinStateStore;
         }
 
         public Task<byte[]> GetAaguidAsync() => Task.FromResult(_keys.Aaguid);
@@ -93,6 +98,14 @@ namespace VFido.SecretManager
         {
             var attestation = _keys.GetOrCreateAttestationCertificate();
             return Task.FromResult(_keys.LoadKey(attestation.KeyHandle).Sign(data));
+        }
+
+        public Task<PinState?> LoadPinStateAsync() => Task.FromResult(_pinState?.Load());
+
+        public Task SavePinStateAsync(PinState state)
+        {
+            _pinState?.Save(state);
+            return Task.CompletedTask;
         }
 
         private StoredCredential RequireCredential(byte[] credentialId) =>
