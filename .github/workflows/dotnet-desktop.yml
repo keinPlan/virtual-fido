@@ -22,6 +22,7 @@ jobs:
     env:
       Solution_Name: VirtualFido.sln
       Gui_Project_Path: VFido.Gui\VFido.Gui.csproj
+      Server_Project_Path: VFido.SecretManager.MtlsBasedSecretStoreServer\VFido.SecretManager.MtlsBasedSecretStoreServer.csproj
 
     steps:
     - name: Checkout
@@ -56,18 +57,31 @@ jobs:
 
     - name: Publish GUI (Release only)
       if: matrix.configuration == 'Release'
-      run: dotnet publish $env:Gui_Project_Path --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:Version=${{ steps.version.outputs.version }} --output publish
+      run: dotnet publish $env:Gui_Project_Path --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:Version=${{ steps.version.outputs.version }} --output publish\gui
 
-    - name: Upload build artifacts
+    - name: Publish Server (Release only)
+      if: matrix.configuration == 'Release'
+      run: dotnet publish $env:Server_Project_Path --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:Version=${{ steps.version.outputs.version }} --output publish\server
+
+    - name: Upload GUI build artifacts
       if: matrix.configuration == 'Release'
       uses: actions/upload-artifact@v4
       with:
         name: VFido.Gui-${{ steps.version.outputs.base }}-build.${{ steps.version.outputs.build }}-win-x64
-        path: publish
+        path: publish\gui
 
-    - name: Zip published build
+    - name: Upload Server build artifacts
+      if: matrix.configuration == 'Release'
+      uses: actions/upload-artifact@v4
+      with:
+        name: VFido.SecretManager.MtlsBasedSecretStoreServer-${{ steps.version.outputs.base }}-build.${{ steps.version.outputs.build }}-win-x64
+        path: publish\server
+
+    - name: Zip published builds
       if: matrix.configuration == 'Release' && github.event_name == 'push'
-      run: Compress-Archive -Path publish\* -DestinationPath VFido.Gui-${{ steps.version.outputs.base }}-build.${{ steps.version.outputs.build }}-win-x64.zip
+      run: |
+        Compress-Archive -Path publish\gui\* -DestinationPath VFido.Gui-${{ steps.version.outputs.base }}-build.${{ steps.version.outputs.build }}-win-x64.zip
+        Compress-Archive -Path publish\server\* -DestinationPath VFido.SecretManager.MtlsBasedSecretStoreServer-${{ steps.version.outputs.base }}-build.${{ steps.version.outputs.build }}-win-x64.zip
 
     - name: Create GitHub Release
       if: matrix.configuration == 'Release' && github.event_name == 'push'
@@ -75,4 +89,6 @@ jobs:
       with:
         tag_name: build-${{ steps.version.outputs.build }}
         name: v${{ steps.version.outputs.base }} (build ${{ steps.version.outputs.build }})
-        files: VFido.Gui-${{ steps.version.outputs.base }}-build.${{ steps.version.outputs.build }}-win-x64.zip
+        files: |
+          VFido.Gui-${{ steps.version.outputs.base }}-build.${{ steps.version.outputs.build }}-win-x64.zip
+          VFido.SecretManager.MtlsBasedSecretStoreServer-${{ steps.version.outputs.base }}-build.${{ steps.version.outputs.build }}-win-x64.zip
