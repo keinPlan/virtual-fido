@@ -165,16 +165,18 @@ public partial class AddStickWindow : Window
                     ShowError("A valid server base address is required.");
                     return;
                 }
-                if (string.IsNullOrEmpty(MtlsLoginPasswordBox.Text)
-                    || string.IsNullOrWhiteSpace(MtlsClientCertPathBox.Text) || string.IsNullOrWhiteSpace(MtlsServerCaCertPathBox.Text))
+                if (string.IsNullOrWhiteSpace(MtlsClientCertPathBox.Text) || string.IsNullOrWhiteSpace(MtlsServerCaCertPathBox.Text))
                 {
-                    ShowError("Login password, client certificate and server CA certificate are required.");
+                    ShowError("Client certificate and server CA certificate are required.");
                     return;
                 }
 
                 mtlsClientCertSourcePath = MtlsClientCertPathBox.Text;
                 mtlsServerCaCertSourcePath = MtlsServerCaCertPathBox.Text;
                 var mtlsClientCertPassword = string.IsNullOrEmpty(MtlsClientCertPasswordBox.Text) ? null : MtlsClientCertPasswordBox.Text;
+                // Leave blank for a passwordless server-side identity - the mTLS certificate alone
+                // authenticates it, and the server rejects a login attempt outright either way.
+                var mtlsLoginPassword = string.IsNullOrEmpty(MtlsLoginPasswordBox.Text) ? null : MtlsLoginPasswordBox.Text;
 
                 CreateButton.IsEnabled = false;
                 ErrorText.IsVisible = false;
@@ -183,7 +185,7 @@ public partial class AddStickWindow : Window
                     // Tested against the originally picked paths, before anything is copied or
                     // persisted - a bad cert/password/unreachable server leaves the dialog exactly
                     // as the user left it, with nothing created.
-                    await TestMtlsConnectionAsync(serverAddress, MtlsLoginPasswordBox.Text!,
+                    await TestMtlsConnectionAsync(serverAddress, mtlsLoginPassword,
                         mtlsClientCertSourcePath, mtlsClientCertPassword, mtlsServerCaCertSourcePath);
                 }
                 catch (Exception ex)
@@ -202,6 +204,7 @@ public partial class AddStickWindow : Window
                     ClientCertificatePath = "certs/client.pfx",
                     ClientCertificatePassword = mtlsClientCertPassword,
                     ServerCaCertificatePath = "certs/ca.crt",
+                    RequiresLoginPassword = mtlsLoginPassword != null,
                 };
                 break;
 
@@ -244,7 +247,7 @@ public partial class AddStickWindow : Window
     }
 
     /// <summary>Exercises cert loading, the TLS handshake/CA trust, and login in one call - <see cref="MtlsBasedSecretStoreClient"/> logs in transparently on its first request.</summary>
-    private static async Task TestMtlsConnectionAsync(Uri serverAddress, string password, string clientCertPath, string? clientCertPassword, string serverCaCertPath)
+    private static async Task TestMtlsConnectionAsync(Uri serverAddress, string? password, string clientCertPath, string? clientCertPassword, string serverCaCertPath)
     {
         using var clientCertificate = new X509Certificate2(clientCertPath, clientCertPassword);
         using var serverCaCertificate = new X509Certificate2(serverCaCertPath);

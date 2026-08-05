@@ -163,11 +163,22 @@ public sealed class StickManager : IStickManager
 
             case MtlsSecretManagerConfig mtlsConfig:
             {
-                var credentials = await _credentialPrompt.RequestCredentialsAsync(config.Name, requireUsername: false, prefilledUsername: null);
-                if (credentials == null)
-                    return null;
+                string password;
+                if (mtlsConfig.RequiresLoginPassword)
+                {
+                    var credentials = await _credentialPrompt.RequestCredentialsAsync(config.Name, requireUsername: false, prefilledUsername: null);
+                    if (credentials == null)
+                        return null;
 
-                var (_, password) = credentials.Value;
+                    (_, password) = credentials.Value;
+                }
+                else
+                {
+                    // Passwordless server-side identity - the mTLS certificate alone authenticates it,
+                    // so there's nothing to prompt for.
+                    password = string.Empty;
+                }
+
                 var stickDirectory = _configStore.GetStickDirectory(config.Name);
                 var clientCertificate = new X509Certificate2(
                     ResolvePath(stickDirectory, mtlsConfig.ClientCertificatePath), mtlsConfig.ClientCertificatePassword);

@@ -21,6 +21,7 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreClient
         /// <summary>CA certificate the server's certificate must chain to; pins the connection against MITM.</summary>
         public required X509Certificate2 ServerCaCertificate { get; init; }
 
-        public required string Password { get; init; }
+        /// <summary>Omit for passwordless server-side identities - the mTLS certificate alone is sufficient there, and the server rejects a login attempt outright.</summary>
+        public string? Password { get; init; }
     }
 }

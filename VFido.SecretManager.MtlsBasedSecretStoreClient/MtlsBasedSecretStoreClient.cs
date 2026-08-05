@@ -141,9 +141,11 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreClient
             await EnsureLoggedInAsync().ConfigureAwait(false);
 
             var response = await SendAsync(route, body).ConfigureAwait(false);
-            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            if (response.StatusCode == HttpStatusCode.Unauthorized && !string.IsNullOrEmpty(_options.Password))
             {
                 // Token may have expired server-side ahead of our local clock; force one re-login and retry.
+                // Passwordless identities have no token to refresh - the mTLS cert is all they ever send,
+                // so a 401 there is a real rejection, not staleness.
                 await LoginAsync().ConfigureAwait(false);
                 response = await SendAsync(route, body).ConfigureAwait(false);
             }
@@ -158,12 +160,20 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreClient
             {
                 Content = JsonContent.Create(body),
             };
-            message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _token);
+            if (_token is not null)
+                message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _token);
             return await _http.SendAsync(message).ConfigureAwait(false);
         }
 
         private async Task EnsureLoggedInAsync()
         {
+            // No password configured => this is a passwordless server-side identity, which
+            // IdentityResolutionFilter authenticates from the mTLS certificate alone; calling
+            // /login for one always fails with 401 since the server only issues tokens to
+            // password-protected identities.
+            if (string.IsNullOrEmpty(_options.Password))
+                return;
+
             if (_token is not null && DateTimeOffset.UtcNow < _tokenExpiresAt)
                 return;
 
@@ -178,7 +188,7 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreClient
                 if (_token is not null && DateTimeOffset.UtcNow < _tokenExpiresAt)
                     return;
 
-                var request = new LoginRequest(_options.Password);
+                var request = new LoginRequest(_options.Password!);
                 using var response = await _http.PostAsJsonAsync(SecretManagerRoutes.Login, request).ConfigureAwait(false);
                 response.EnsureSuccessStatusCode();
 

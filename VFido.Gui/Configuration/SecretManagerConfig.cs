@@ -41,4 +41,12 @@ public sealed class MtlsSecretManagerConfig : SecretManagerConfig
     public required string ClientCertificatePath { get; set; }
     public string? ClientCertificatePassword { get; set; }
     public required string ServerCaCertificatePath { get; set; }
+
+    /// <summary>
+    /// Whether the server-side identity behind this stick needs a login password (mirrors
+    /// UserDirectoryResolver.RequiresPassword on the server, established once at Create time).
+    /// Defaults to true so configs written before this field existed keep prompting, matching
+    /// their previous behavior.
+    /// </summary>
+    public bool RequiresLoginPassword { get; set; } = true;
 }
