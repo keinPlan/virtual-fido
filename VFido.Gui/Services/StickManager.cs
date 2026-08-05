@@ -54,7 +54,8 @@ public sealed class StickManager : IStickManager
         if (config == null)
             return new StickAttachResult(StickAttachOutcome.Failed, string.Empty, $"No stored config for stick {stickName}.");
 
-        IFido2SecretManager secretManager;
+        IFido2SecretManager? secretManager = null;
+        byte[] aaguid;
         try
         {
             var built = await BuildSecretManagerAsync(config);
@@ -62,14 +63,14 @@ public sealed class StickManager : IStickManager
                 return new StickAttachResult(StickAttachOutcome.Cancelled, string.Empty, null);
 
             secretManager = built;
+            aaguid = await secretManager.GetAaguidAsync();
         }
         catch (Exception ex)
         {
-            Logger.Warn(ex, () => $"Failed to build secret manager for stick {stickName}: {ex.Message}");
+            Logger.Warn(ex, () => $"Failed to connect secret manager for stick {stickName}: {ex.Message}");
+            (secretManager as IDisposable)?.Dispose();
             return new StickAttachResult(StickAttachOutcome.Failed, string.Empty, ex.Message);
         }
-
-        var aaguid = await secretManager.GetAaguidAsync();
 
         var deviceId = (0x0001 << 16) | _nextDeviceSlot++;
         var device = new FidoUsbStick(
@@ -166,7 +167,7 @@ public sealed class StickManager : IStickManager
                 if (credentials == null)
                     return null;
 
-                var (username, password) = credentials.Value;
+                var (_, password) = credentials.Value;
                 var stickDirectory = _configStore.GetStickDirectory(config.Name);
                 var clientCertificate = new X509Certificate2(
                     ResolvePath(stickDirectory, mtlsConfig.ClientCertificatePath), mtlsConfig.ClientCertificatePassword);
@@ -177,7 +178,6 @@ public sealed class StickManager : IStickManager
                     ServerBaseAddress = mtlsConfig.ServerBaseAddress,
                     ClientCertificate = clientCertificate,
                     ServerCaCertificate = serverCaCertificate,
-                    Username = username,
                     Password = password,
                 });
             }

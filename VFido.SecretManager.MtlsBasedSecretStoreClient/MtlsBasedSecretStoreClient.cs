@@ -178,7 +178,7 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreClient
                 if (_token is not null && DateTimeOffset.UtcNow < _tokenExpiresAt)
                     return;
 
-                var request = new LoginRequest(_options.Username, _options.Password);
+                var request = new LoginRequest(_options.Password);
                 using var response = await _http.PostAsJsonAsync(SecretManagerRoutes.Login, request).ConfigureAwait(false);
                 response.EnsureSuccessStatusCode();
 

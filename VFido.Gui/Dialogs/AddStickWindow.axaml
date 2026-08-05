@@ -42,7 +42,7 @@
             <StackPanel x:Name="MtlsPanel" Spacing="12" IsVisible="False">
                 <StackPanel Spacing="4">
                     <TextBlock Text="Server base address"/>
-                    <TextBox x:Name="MtlsServerAddressBox" Watermark="https://secrets.example.internal:5443"/>
+                    <TextBox x:Name="MtlsServerAddressBox" Text="https://localhost:5443" Watermark="https://secrets.example.internal:5443"/>
                 </StackPanel>
                 <StackPanel Spacing="4">
                     <TextBlock Text="Username"/>

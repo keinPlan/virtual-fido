@@ -183,7 +183,7 @@ public partial class AddStickWindow : Window
                     // Tested against the originally picked paths, before anything is copied or
                     // persisted - a bad cert/password/unreachable server leaves the dialog exactly
                     // as the user left it, with nothing created.
-                    await TestMtlsConnectionAsync(serverAddress, MtlsUsernameBox.Text!, MtlsLoginPasswordBox.Text!,
+                    await TestMtlsConnectionAsync(serverAddress, MtlsLoginPasswordBox.Text!,
                         mtlsClientCertSourcePath, mtlsClientCertPassword, mtlsServerCaCertSourcePath);
                 }
                 catch (Exception ex)
@@ -245,7 +245,7 @@ public partial class AddStickWindow : Window
     }
 
     /// <summary>Exercises cert loading, the TLS handshake/CA trust, and login in one call - <see cref="MtlsBasedSecretStoreClient"/> logs in transparently on its first request.</summary>
-    private static async Task TestMtlsConnectionAsync(Uri serverAddress, string username, string password, string clientCertPath, string? clientCertPassword, string serverCaCertPath)
+    private static async Task TestMtlsConnectionAsync(Uri serverAddress, string password, string clientCertPath, string? clientCertPassword, string serverCaCertPath)
     {
         using var clientCertificate = new X509Certificate2(clientCertPath, clientCertPassword);
         using var serverCaCertificate = new X509Certificate2(serverCaCertPath);
@@ -255,7 +255,6 @@ public partial class AddStickWindow : Window
             ServerBaseAddress = serverAddress,
             ClientCertificate = clientCertificate,
             ServerCaCertificate = serverCaCertificate,
-            Username = username,
             Password = password,
         });
 

@@ -59,33 +59,33 @@ var app = builder.Build();
 
 app.MapPost(SecretManagerRoutes.Login, (LoginRequest request, HttpContext http, SessionTokenService sessions, UserSessionCache cache, UserDirectoryResolver users, ILogger<Program> logger) =>
 {
-    var certUsername = http.Connection.ClientCertificate?.GetNameInfo(X509NameType.SimpleName, false);
-    if (!string.Equals(certUsername, request.Username, StringComparison.Ordinal))
+    var username = http.Connection.ClientCertificate?.GetNameInfo(X509NameType.SimpleName, false);
+    if (string.IsNullOrEmpty(username))
     {
-        logger.LogWarning("Login rejected: client certificate CN {CertUsername} does not match requested username {RequestedUsername}.", certUsername, request.Username);
+        logger.LogWarning("Login rejected: no client certificate CN present.");
         return Results.Unauthorized();
     }
 
-    if (!users.UserExists(request.Username) || !users.RequiresPassword(request.Username))
+    if (!users.UserExists(username) || !users.RequiresPassword(username))
     {
-        logger.LogWarning("Login rejected for {Username}: user does not exist or does not require a password.", request.Username);
+        logger.LogWarning("Login rejected for {Username}: user does not exist or does not require a password.", username);
         return Results.Unauthorized();
     }
 
     IFido2SecretManager manager;
     try
     {
-        manager = users.BuildManagerFromPassword(request.Username, request.Password);
+        manager = users.BuildManagerFromPassword(username, request.Password);
     }
     catch (VFido.SecretManager.FileBasedSecretStore.InvalidCredentialsException)
     {
-        logger.LogWarning("Login rejected for {Username}: invalid password.", request.Username);
+        logger.LogWarning("Login rejected for {Username}: invalid password.", username);
         return Results.Unauthorized();
     }
 
-    var response = sessions.IssueToken(request.Username);
+    var response = sessions.IssueToken(username);
     cache.SetForToken(response.Token, manager);
-    logger.LogInformation("Login succeeded for {Username}.", request.Username);
+    logger.LogInformation("Login succeeded for {Username}.", username);
     return Results.Ok(response);
 });
 
