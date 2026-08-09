@@ -14,7 +14,7 @@ namespace VFido.Core.Vhci
     /// and performs the usbip import handshake, so the target server still needs to answer OP_REQ_DEVINFO
     /// for the given busid (see UsbIpPacketHandler).
     /// </summary>
-    public sealed class VhciAttacher
+    public sealed class VhciController
     {
         // usbip::vhci::GUID_DEVINTERFACE_USB_HOST_CONTROLLER (include/usbip/vhci.h)
         private static readonly Guid DeviceInterfaceGuid = new Guid("B4030C06-DC5F-4FCC-87EB-E5515A0935C0");

@@ -107,7 +107,7 @@ public sealed class StickManager : IStickManager
         if (!_connected.TryGetValue(stickName, out var connectedStick))
             return Task.FromResult(new StickAttachResult(StickAttachOutcome.Success, string.Empty, null));
 
-        var vhci = new VhciAttacher();
+        var vhci = new VhciController();
         var busid = $"{connectedStick.Device.DeviceBusNum}-{connectedStick.Device.DeviceBusID}";
 
         StickAttachResult result;
@@ -209,7 +209,7 @@ public sealed class StickManager : IStickManager
             return Task.FromResult(new StickAttachResult(StickAttachOutcome.UnsupportedPlatform, busid, UnsupportedPlatformMessage));
         }
 
-        var vhci = new VhciAttacher();
+        var vhci = new VhciController();
         if (!vhci.TryAttach(Host, Port.ToString(), busid, out var port, out var error))
         {
             Logger.Warn($"Failed to attach busid={busid}: {error}");

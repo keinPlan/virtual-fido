@@ -4,6 +4,55 @@ VirtualFido is a Windows software FIDO2/CTAP2 security key. It emulates a USB se
 
 ## How it works
 
+```mermaid
+flowchart TB
+    subgraph gui["VFido.Gui process"]
+        direction LR
+        UI["StickManager\n(driven by MainWindow)"]
+        VhciController["VhciController"]
+
+        subgraph secrets["credential storage"]
+            direction TB
+            SM["VFido.SecretManager\nICredentialStore / IKeyStore / IPinStateStore"]
+            Mem["MemoryBasedSecretStore\n(RAM only)"]
+            File["FileBasedSecretStore\n(AES-encrypted files)"]
+            Client["MtlsBasedSecretStoreClient"]
+
+            SM -. "implemented by" .-> Mem
+            SM -. "implemented by" .-> File
+            SM -. "implemented by" .-> Client
+        end
+
+        subgraph request["CTAP2 request path"]
+            direction LR
+            UsbIpServer["UsbIpServer\n(TCP loopback)"]
+            Ctap2["Fido2Authenticator\nMakeCredential · GetAssertion · ClientPin"]
+
+            UsbIpServer -- "CTAP HID reports" --> Ctap2
+        end
+    end
+
+    subgraph usb["virtual USB device"]
+        direction TB
+        Driver["usbip-win2 VHCI driver\n(kernel)"]
+        OS["OS and browsers\nsee a genuine FIDO2 security key"]
+
+        Driver -- "enumerates as HID" --> OS
+    end
+
+    UI -- "1: connect - builds backend" --> SM
+    UI -- "2: connect - attach\ndisconnect - detach" --> VhciController
+    VhciController -- "IOCTL 0x800 / 0x801\n(plugin / plugout)" --> Driver
+    Driver -. "TCP loopback +\nUSB/IP import" .-> UsbIpServer
+    Ctap2 -- "reads / writes credentials" --> SM
+
+    subgraph external["any host, local or remote"]
+        Server["MtlsBasedSecretStoreServer\nown CA · issues per-user client certs"]
+    end
+
+    Client == "HTTPS + mTLS\nclient cert identifies user · password login optional" ==> Server
+```
+
 - **VFido.Core** implements the CTAP2 authenticator protocol (`MakeCredential`, `GetAssertion`, `ClientPin`, `GetInfo`, ...), CTAP HID framing, and a USB/IP server that presents the virtual device over the VHCI driver so Windows recognizes it as a USB HID FIDO device.
 - **VFido.Gui** is an [Avalonia](https://avaloniaui.net/) desktop application that runs the virtual authenticator, shows a user-presence approval window for each authentication request, and lets you manage stored credentials.
 - **VFido.SecretManager** defines the credential/secret storage abstraction, with pluggable backends:
