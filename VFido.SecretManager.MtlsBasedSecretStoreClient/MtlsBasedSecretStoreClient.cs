@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -52,7 +53,15 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreClient
             // intermediate itself is the trusted anchor.
             chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
 
-            return chain.Build(certificate);
+            if (!chain.Build(certificate))
+                return false;
+
+            // Server and client leaves are issued with different X509KeyUsageExtension values
+            // (CaManager.IssueServerCertificate adds KeyEncipherment, IssueClientCertificate doesn't) -
+            // without this, a valid client leaf presented here would chain-build successfully too,
+            // since both are signed by the same intermediate.
+            var keyUsage = certificate.Extensions.OfType<X509KeyUsageExtension>().FirstOrDefault();
+            return keyUsage is not null && keyUsage.KeyUsages.HasFlag(X509KeyUsageFlags.KeyEncipherment);
         }
 
         public async Task<byte[]> GetAaguidAsync()
