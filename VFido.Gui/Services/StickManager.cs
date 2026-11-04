@@ -134,6 +134,31 @@ public sealed class StickManager : IStickManager
     public Task DeleteCredentialAsync(string stickName, byte[] credentialId) =>
         RequireConnected(stickName).SecretManager.DeleteCredentialAsync(credentialId);
 
+    public bool SupportsPasskeyBackup(string stickName) =>
+        RequireConnected(stickName).SecretManager is IPasskeyBackupManager { SupportsPasskeyBackup: true };
+
+    public Task<byte[]> ExportPasskeysAsync(string stickName, IReadOnlyList<byte[]> credentialIds, X509Certificate2 recipient)
+    {
+        var manager = BackupManager(stickName);
+        return Task.Run(() => manager.ExportPasskeysAsync(credentialIds, recipient));
+    }
+
+    public Task<PasskeyImportPreview> PreviewPasskeyImportAsync(string stickName, byte[] backup, X509Certificate2 recipient)
+    {
+        var manager = BackupManager(stickName);
+        return Task.Run(() => manager.PreviewPasskeyImportAsync(backup, recipient));
+    }
+
+    public Task<PasskeyImportResult> ImportPasskeysAsync(string stickName, byte[] backup, X509Certificate2 recipient)
+    {
+        var manager = BackupManager(stickName);
+        return Task.Run(() => manager.ImportPasskeysAsync(backup, recipient));
+    }
+
+    private IPasskeyBackupManager BackupManager(string stickName) =>
+        RequireConnected(stickName).SecretManager is IPasskeyBackupManager { SupportsPasskeyBackup: true } manager
+            ? manager : throw new NotSupportedException("Passkey backup is currently supported by memory and file stores only.");
+
     private ConnectedStick RequireConnected(string stickName) =>
         _connected.TryGetValue(stickName, out var connectedStick)
             ? connectedStick

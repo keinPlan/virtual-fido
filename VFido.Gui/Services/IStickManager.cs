@@ -1,3 +1,4 @@
+using System.Security.Cryptography.X509Certificates;
 using VFido.Gui.Configuration;
 using VFido.SecretManager;
 
@@ -43,4 +44,9 @@ public interface IStickManager
 
     /// <summary>Permanently deletes a stored credential from a currently connected stick.</summary>
     Task DeleteCredentialAsync(string stickName, byte[] credentialId);
+
+    bool SupportsPasskeyBackup(string stickName);
+    Task<byte[]> ExportPasskeysAsync(string stickName, IReadOnlyList<byte[]> credentialIds, X509Certificate2 recipient);
+    Task<PasskeyImportPreview> PreviewPasskeyImportAsync(string stickName, byte[] backup, X509Certificate2 recipient);
+    Task<PasskeyImportResult> ImportPasskeysAsync(string stickName, byte[] backup, X509Certificate2 recipient);
 }

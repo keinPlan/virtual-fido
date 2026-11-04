@@ -101,3 +101,19 @@ VFido.SecretManager.MtlsBasedSecretStoreClient/   mTLS remote secret store clien
 VFido.SecretManager.MtlsBasedSecretStoreServer/   mTLS remote secret store server
 VirtualFido.Tests/                        Test suite
 ```
+
+## Certificate-encrypted passkey backups
+
+For a connected memory or file-backed stick, open **Credentials**:
+
+1. Choose **Create transfer certificate**. Enter and confirm a password, then save the private `.pfx` and public `.cer` as separate files. Keep the PFX and password privately; share only the CER. The certificate is self-signed and does not need installation in the Windows certificate store.
+2. Check the credentials to back up and choose **Export selected**. Select the recipient CER, verify its SHA-256 fingerprint, and save the encrypted `.vfidobackup` file. Export needs no access to the private PFX. Source credentials remain in place.
+3. On the destination stick, choose **Import passkeys**, select the backup and matching PFX, enter its password, and review the account list before importing. A memory destination remains temporary; use a file-backed stick for persistence.
+
+The backup preserves credential IDs, RP IDs, user handles, ES256/P-256 private keys, discoverability, credential protection, and signature counters. Identical existing credentials are skipped without overwriting their metadata or counters. Conflicting credential IDs reject the entire import before any writes. Write failures trigger rollback of newly created keys and metadata; rollback errors are reported. Import is not a crash-atomic transaction: after a process or machine interruption, inspect the destination before retrying.
+
+Each export uses a fresh AES-256-GCM key and nonce; RSA-OAEP-SHA256 encrypts the AES key for the recipient certificate. The version, encryption algorithm, certificate fingerprint, and wrapped key are authenticated with the payload. Private-key and account data are inside the encrypted payload. Encryption does not authenticate the sender: anyone with the public CER can create a backup addressed to it. Only import files from a trusted source.
+
+The generated RSA-3072 recipient certificate lasts five years. Expired certificates cannot be used for new exports, but their private keys can still restore old backups. Files are limited to 64 MiB and batches to 10,000 credentials. mTLS remote stores and TPM stores do not currently expose backup/import capabilities.
+
+This is a **VirtualFido-specific backup format**, not FIDO CXP or a CXF-conformant export. [CXF 1.0](https://fidoalliance.org/specs/cx/cxf-v1.0-ps-20250814.html#dict-passkey) excludes credentials with nonzero signature counters, whereas this backup preserves existing VirtualFido counters. Restoring an old backup or using multiple copies concurrently can cause relying parties to detect counter regressions and reject sign-ins. This feature does not change credential backup eligibility, copy authenticator PINs or attestation keys, or delete source credentials.

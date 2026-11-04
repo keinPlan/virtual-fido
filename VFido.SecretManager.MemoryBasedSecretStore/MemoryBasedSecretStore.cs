@@ -8,7 +8,7 @@ namespace VFido.SecretManager.MemoryBasedSecretStore
     /// TPM- or server-backed IKeyStore replaces it; on-disk persistence is a separate future
     /// implementation of this same seam, not this class.
     /// </summary>
-    public class MemoryBasedSecretStore : IKeyStore
+    public class MemoryBasedSecretStore : IKeyStore, ICredentialKeyTransfer
     {
         /// <summary>Fixed AAGUID identifying every stick backed by this store type.</summary>
         private static readonly Guid AaguidGuid = new("6d90ff30-1e3a-4c6a-8b7b-9a4e6a2c9f30");
@@ -19,6 +19,17 @@ namespace VFido.SecretManager.MemoryBasedSecretStore
         // little-endian), which scrambles the hyphenated hex an RP displays for the AAGUID field -
         // it must be the raw 16 bytes in RFC 4122 (big-endian) order instead.
         public byte[] Aaguid => AaguidGuid.ToByteArray(bigEndian: true);
+
+        public byte[] ExportPkcs8(byte[] handle) => handle.ToArray();
+
+        public byte[] ImportPkcs8(byte[] privateKey)
+        {
+            using var key = ECDsa.Create();
+            key.ImportPkcs8PrivateKey(privateKey, out var read);
+            if (read != privateKey.Length || key.ExportParameters(false).Curve.Oid.Value != "1.2.840.10045.3.1.7")
+                throw new InvalidDataException("Only P-256 private keys are supported.");
+            return key.ExportPkcs8PrivateKey();
+        }
 
         public ISigningKey CreateEs256Key() => new MemoryBasedSigningKey(Crypto.EcdsaProvider.GenerateP256());
 

@@ -11,7 +11,7 @@ namespace VFido.SecretManager.FileBasedSecretStore
     /// every key file permanently unrecoverable, matching the TPM-backed stores this seam is meant
     /// to also support.
     /// </summary>
-    public class FileBasedSecretStore : IKeyStore, IPinStateStore
+    public class FileBasedSecretStore : IKeyStore, IPinStateStore, ICredentialKeyTransfer
     {
         private const int SaltSize = 16;
         private const string SaltFileName = "salt.bin";
@@ -77,6 +77,22 @@ namespace VFido.SecretManager.FileBasedSecretStore
             Directory.CreateDirectory(_authDirectory);
 
             _aesKey = aesKey;
+        }
+
+        public byte[] ExportPkcs8(byte[] handle) =>
+            AesKeyProtector.Decrypt(_aesKey, File.ReadAllBytes(KeyFilePath(new Guid(handle))));
+
+        public byte[] ImportPkcs8(byte[] privateKey)
+        {
+            using var key = ECDsa.Create();
+            key.ImportPkcs8PrivateKey(privateKey, out var read);
+            if (read != privateKey.Length || key.ExportParameters(false).Curve.Oid.Value != "1.2.840.10045.3.1.7")
+                throw new InvalidDataException("Only P-256 private keys are supported.");
+            var keyId = Guid.NewGuid();
+            var path = KeyFilePath(keyId);
+            try { File.WriteAllBytes(path, AesKeyProtector.Encrypt(_aesKey, privateKey)); }
+            catch { File.Delete(path); throw; }
+            return keyId.ToByteArray();
         }
 
         public ISigningKey CreateEs256Key()
