@@ -24,6 +24,7 @@
                     <ComboBoxItem Content="Memory (not persisted)"/>
                     <ComboBoxItem Content="File-based"/>
                     <ComboBoxItem Content="mTLS server"/>
+                    <ComboBoxItem Content="TPM 2.0 (Windows)"/>
                 </ComboBox>
             </StackPanel>
 
@@ -69,6 +70,36 @@
                 </StackPanel>
             </StackPanel>
 
+            <StackPanel x:Name="TpmPanel" Spacing="12" IsVisible="False">
+                <TextBlock x:Name="TpmProvisionHint" Text="Import a master recovery PFX or create one below. Signing keys will be used inside this computer's TPM." Foreground="Gray" FontSize="12" TextWrapping="Wrap"/>
+                <StackPanel x:Name="TpmMetadataPanel" Spacing="12">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Username"/>
+                        <TextBox x:Name="TpmUsernameBox"/>
+                    </StackPanel>
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Metadata password"/>
+                        <TextBox x:Name="TpmMetadataPasswordBox" PasswordChar="*"/>
+                        <TextBlock Text="Encrypts account details and PIN state. Enter it again when connecting. It is separate from the recovery PFX password and is never saved." Foreground="Gray" FontSize="11" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Master recovery PFX"/>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBox x:Name="TpmPfxPathBox" Grid.Column="0"/>
+                        <Button Content="Browse..." Grid.Column="1" Margin="8,0,0,0" Click="BrowseTpmPfx_Click"/>
+                    </Grid>
+                    <Button x:Name="TpmCreateMasterButton" Content="Create recovery PFX..." Click="CreateTpmMaster_Click"/>
+                </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Recovery PFX password"/>
+                    <TextBox x:Name="TpmPfxPasswordBox" PasswordChar="*"/>
+                    <TextBlock Text="Used only for provisioning or recovery. Keep this PFX and password, plus a backup of the stick folder and its metadata password, to recover your credentials." Foreground="Gray" FontSize="11" TextWrapping="Wrap"/>
+                </StackPanel>
+                <Button x:Name="TpmRestoreButton" Content="Restore master on this TPM" IsVisible="False" Click="RestoreTpmMaster_Click"/>
+            </StackPanel>
+
+            <TextBlock x:Name="ProgressText" Text="Working..." TextWrapping="Wrap" IsVisible="False"/>
             <TextBlock x:Name="ErrorText" Foreground="IndianRed" TextWrapping="Wrap" IsVisible="False"/>
 
             <Grid ColumnDefinitions="*,Auto">

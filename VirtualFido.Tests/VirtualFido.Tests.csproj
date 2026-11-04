@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\VFido.Gui\VFido.Gui.csproj" />
+    <ProjectReference Include="..\VFido.SecretManager.TpmBasedSecretStore\VFido.SecretManager.TpmBasedSecretStore.csproj" />
     <ProjectReference Include="..\VFido.SecretManager.MtlsBasedSecretStoreServer\VFido.SecretManager.MtlsBasedSecretStoreServer.csproj" />
   </ItemGroup>
 

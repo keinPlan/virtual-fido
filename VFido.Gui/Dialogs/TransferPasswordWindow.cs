@@ -9,11 +9,11 @@ internal sealed class TransferPasswordWindow : Window
 {
     private TransferPasswordWindow() { }
 
-    public static Task<string?> ShowAsync(Window owner, bool creating)
+    public static Task<string?> ShowAsync(Window owner, bool creating, bool masterRecovery = false)
     {
         var window = new TransferPasswordWindow
         {
-            Title = creating ? "Protect transfer private key" : "Unlock transfer private key",
+            Title = masterRecovery ? "Protect TPM recovery master" : creating ? "Protect transfer private key" : "Unlock transfer private key",
             Width = 440, SizeToContent = SizeToContent.Height, CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner, ShowInTaskbar = false,
         };
@@ -40,7 +40,9 @@ internal sealed class TransferPasswordWindow : Window
         var panel = new StackPanel { Margin = new Thickness(20), Spacing = 12 };
         panel.Children.Add(new TextBlock
         {
-            Text = creating
+            Text = masterRecovery
+                ? "Save the recovery PFX privately and keep its password. It protects every credential under this master. Keep a separate backup of the stick folder and its metadata password."
+                : creating
                 ? "Save the PFX privately and keep its password. Both are required to restore backups. Share only the public CER file."
                 : "Enter the password for the PFX file containing the recipient's private key.",
             TextWrapping = TextWrapping.Wrap,

@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -6,6 +7,7 @@ using VFido.Gui.Configuration;
 using VFido.Gui.Services;
 using VFido.SecretManager.FileBasedSecretStore;
 using VFido.SecretManager.MtlsBasedSecretStoreClient;
+using VFido.SecretManager.TpmBasedSecretStore;
 
 namespace VFido.Gui.Dialogs;
 
@@ -15,6 +17,7 @@ public partial class AddStickWindow : Window
     private IStickManager? _stickManager;
     private StickConfig? _existing;
     private StickConfig? _result;
+    private bool _busy;
 
     /// <summary>Set once the stick has been deleted, so the caller knows to refresh even though <see cref="_result"/> is null.</summary>
     public bool Deleted { get; private set; }
@@ -22,6 +25,8 @@ public partial class AddStickWindow : Window
     public AddStickWindow()
     {
         InitializeComponent();
+        Closing += (_, e) => { if (_busy) e.Cancel = true; };
+        Closed += (_, _) => ClearTpmPasswords();
         NameBox.Text = "VFido-FileBased";
         SerialNumberBox.Text = "VFIDO-" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
         SecretManagerTypeBox.SelectedIndex = 1;
@@ -54,6 +59,14 @@ public partial class AddStickWindow : Window
         window.SecretManagerSection.IsVisible = false;
         window.FilePanel.IsVisible = false;
         window.MtlsPanel.IsVisible = false;
+        window.TpmPanel.IsVisible = existing.SecretManager is TpmSecretManagerConfig;
+        window.TpmMetadataPanel.IsVisible = false;
+        window.TpmCreateMasterButton.IsVisible = false;
+        window.TpmRestoreButton.IsVisible = existing.SecretManager is TpmSecretManagerConfig;
+        window.TpmRestoreButton.IsEnabled = !stickManager.IsConnected(existing.Name);
+        window.TpmProvisionHint.Text = stickManager.IsConnected(existing.Name)
+            ? "Disconnect this stick before restoring its master."
+            : "After moving this stick folder to another computer or resetting the TPM, select its original recovery PFX to restore access. Existing credentials are checked before the local master is replaced.";
         window.CreateButton.Content = "Save";
         window.DeleteButton.IsVisible = true;
 
@@ -63,12 +76,15 @@ public partial class AddStickWindow : Window
 
     private void SecretManagerType_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (FilePanel == null || MtlsPanel == null)
+        if (FilePanel == null || MtlsPanel == null || TpmPanel == null)
             return;
 
         FilePanel.IsVisible = SecretManagerTypeBox.SelectedIndex == 1;
         MtlsPanel.IsVisible = SecretManagerTypeBox.SelectedIndex == 2;
+        TpmPanel.IsVisible = SecretManagerTypeBox.SelectedIndex == 3;
     }
+
+    private async void BrowseTpmPfx_Click(object? sender, RoutedEventArgs e) => await BrowseForCertAsync(TpmPfxPathBox);
 
     private async void BrowseClientCert_Click(object? sender, RoutedEventArgs e) => await BrowseForCertAsync(MtlsClientCertPathBox);
 
@@ -113,6 +129,7 @@ public partial class AddStickWindow : Window
 
     private async void Create_Click(object? sender, RoutedEventArgs e)
     {
+        if (_busy) return;
         if (_existing == null && !StickConfigStore.IsValidStickName(NameBox.Text))
         {
             ShowError("Name must be 1-32 characters, letters/digits/'.'/'_'/'-' only, no spaces - it also becomes the stick's folder name.");
@@ -135,6 +152,12 @@ public partial class AddStickWindow : Window
 
             _result = _existing;
             Close();
+            return;
+        }
+
+        if (SecretManagerTypeBox.SelectedIndex == 3)
+        {
+            await CreateTpmStickAsync();
             return;
         }
 
@@ -268,6 +291,110 @@ public partial class AddStickWindow : Window
         await attempt; // observe/rethrow any failure now that we know it already completed
     }
 
+    private async Task CreateTpmStickAsync()
+    {
+        if (string.IsNullOrWhiteSpace(TpmUsernameBox.Text) || string.IsNullOrWhiteSpace(TpmMetadataPasswordBox.Text) ||
+            string.IsNullOrWhiteSpace(TpmPfxPathBox.Text) || string.IsNullOrWhiteSpace(TpmPfxPasswordBox.Text))
+        {
+            ShowError("Enter a username, metadata password, master recovery PFX, and its password.");
+            return;
+        }
+        var name = NameBox.Text!;
+        var serial = SerialNumberBox.Text ?? string.Empty;
+        var username = TpmUsernameBox.Text;
+        var metadataPassword = TpmMetadataPasswordBox.Text;
+        var pfxPath = TpmPfxPathBox.Text;
+        var pfxPassword = TpmPfxPasswordBox.Text;
+        SetTpmBusy(true, "Provisioning and testing TPM signing...");
+        try
+        {
+            _result = await Task.Run(() => TpmStickProvisioning.Create(_configStore!, name, serial, username, metadataPassword, pfxPath, pfxPassword));
+        }
+        catch (Exception ex) { ShowError($"TPM setup failed: {ex.Message}"); }
+        finally { SetTpmBusy(false); }
+        if (_result != null) Close();
+    }
+
+    private async void CreateTpmMaster_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_busy) return;
+        var password = await TransferPasswordWindow.ShowAsync(this, creating: true, masterRecovery: true);
+        if (password == null) return;
+        var destination = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Save TPM master recovery PFX", SuggestedFileName = "vfido-tpm-recovery.pfx", DefaultExtension = "pfx",
+            ShowOverwritePrompt = true,
+            FileTypeChoices = new[] { new FilePickerFileType("Recovery PFX") { Patterns = new[] { "*.pfx" } } },
+        });
+        if (destination == null) return;
+        if (destination.TryGetLocalPath() is not { } path)
+        {
+            ShowError("Choose a local path for the recovery PFX.");
+            return;
+        }
+        SetTpmBusy(true, "Creating encrypted recovery PFX...");
+        try
+        {
+            await Task.Run(() =>
+            {
+                using var master = TpmMasterKey.Generate();
+                var pfx = master.ExportPfx(password);
+                try
+                {
+                    // Never overwrite another master recovery package.
+                    using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                    stream.Write(pfx);
+                    stream.Flush(flushToDisk: true);
+                }
+                finally { CryptographicOperations.ZeroMemory(pfx); }
+            });
+            TpmPfxPathBox.Text = path;
+            TpmPfxPasswordBox.Text = password;
+        }
+        catch (Exception ex) { ShowError($"Could not create recovery PFX: {ex.Message}"); }
+        finally { SetTpmBusy(false); }
+    }
+
+    private async void RestoreTpmMaster_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_busy || _existing == null) return;
+        if (_stickManager!.IsConnected(_existing.Name))
+        {
+            ShowError("Disconnect this stick before restoring its master.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(TpmPfxPathBox.Text) || string.IsNullOrWhiteSpace(TpmPfxPasswordBox.Text))
+        {
+            ShowError("Select this stick's original recovery PFX and enter its password.");
+            return;
+        }
+        var path = TpmPfxPathBox.Text;
+        var password = TpmPfxPasswordBox.Text;
+        SetTpmBusy(true, "Restoring master and checking existing credentials...");
+        try
+        {
+            await Task.Run(() => TpmStickProvisioning.Restore(_configStore!, _existing, path, password));
+            TpmPfxPasswordBox.Text = string.Empty;
+            TpmProvisionHint.Text = "Master restored. Connect using your original metadata username and password.";
+        }
+        catch (Exception ex) { ShowError($"TPM recovery failed: {ex.Message}"); }
+        finally { SetTpmBusy(false); }
+    }
+
+    private void SetTpmBusy(bool busy, string message = "")
+    {
+        _busy = busy;
+        ((Control)Content!).IsEnabled = !busy;
+        ProgressText.Text = message;
+        ProgressText.IsVisible = busy;
+        if (busy) ErrorText.IsVisible = false;
+    }
+
+    private void ClearTpmPasswords()
+    {
+        TpmPfxPasswordBox.Text = string.Empty;
+        TpmMetadataPasswordBox.Text = string.Empty;
+    }
     private void ShowError(string message)
     {
         ErrorText.Text = message;

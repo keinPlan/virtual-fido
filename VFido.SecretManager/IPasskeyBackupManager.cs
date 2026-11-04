@@ -6,6 +6,7 @@ namespace VFido.SecretManager;
 public interface IPasskeyBackupManager
 {
     bool SupportsPasskeyBackup { get; }
+    bool SupportsPasskeyImport => SupportsPasskeyBackup;
     Task<byte[]> ExportPasskeysAsync(IReadOnlyList<byte[]> credentialIds, X509Certificate2 recipient);
     Task<PasskeyImportPreview> PreviewPasskeyImportAsync(byte[] backup, X509Certificate2 recipient);
     Task<PasskeyImportResult> ImportPasskeysAsync(byte[] backup, X509Certificate2 recipient);
@@ -15,8 +16,12 @@ public sealed record PasskeyImportPreview(IReadOnlyList<CredentialInfo> Credenti
 public sealed record PasskeyImportResult(int Imported, int Skipped);
 
 /// <summary>Opt-in backend capability; handles must never be interpreted by the caller.</summary>
-public interface ICredentialKeyTransfer
+public interface ICredentialKeyImporter
+{
+    byte[] ImportPkcs8(byte[] privateKey);
+}
+
+public interface ICredentialKeyTransfer : ICredentialKeyImporter
 {
     byte[] ExportPkcs8(byte[] handle);
-    byte[] ImportPkcs8(byte[] privateKey);
 }

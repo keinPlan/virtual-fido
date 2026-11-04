@@ -6,11 +6,13 @@ namespace VFido.SecretManager;
 public sealed partial class Fido2SecretManager
 {
     public bool SupportsPasskeyBackup => _keys is ICredentialKeyTransfer;
+    public bool SupportsPasskeyImport => _keys is ICredentialKeyImporter;
 
     public Task<byte[]> ExportPasskeysAsync(IReadOnlyList<byte[]> credentialIds, X509Certificate2 recipient)
     {
         lock (_sync)
         {
+            ThrowIfDisposed();
             var transfer = RequireKeyTransfer();
             if (credentialIds.Count is < 1 or > 10000)
                 throw new InvalidOperationException("Select between 1 and 10000 passkeys to export.");
@@ -36,7 +38,8 @@ public sealed partial class Fido2SecretManager
     {
         lock (_sync)
         {
-            RequireKeyTransfer();
+            ThrowIfDisposed();
+            RequireKeyImporter();
             var entries = PasskeyBackup.Decrypt(backup, recipient);
             try
             {
@@ -51,7 +54,8 @@ public sealed partial class Fido2SecretManager
     {
         lock (_sync)
         {
-            var transfer = RequireKeyTransfer();
+            ThrowIfDisposed();
+            var transfer = RequireKeyImporter();
             var entries = PasskeyBackup.Decrypt(backup, recipient);
             var created = new List<(byte[] Id, byte[] Handle)>();
             try
@@ -106,6 +110,9 @@ public sealed partial class Fido2SecretManager
         }
         return pending;
     }
+
+    private ICredentialKeyImporter RequireKeyImporter() => _keys as ICredentialKeyImporter
+        ?? throw new NotSupportedException("This backend does not support passkey import.");
 
     private ICredentialKeyTransfer RequireKeyTransfer() => _keys as ICredentialKeyTransfer
         ?? throw new NotSupportedException("This backend does not support passkey backup or import.");

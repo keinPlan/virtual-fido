@@ -137,28 +137,34 @@ public sealed class StickManager : IStickManager
     public bool SupportsPasskeyBackup(string stickName) =>
         RequireConnected(stickName).SecretManager is IPasskeyBackupManager { SupportsPasskeyBackup: true };
 
+    public bool SupportsPasskeyImport(string stickName) =>
+        RequireConnected(stickName).SecretManager is IPasskeyBackupManager { SupportsPasskeyImport: true };
+
     public Task<byte[]> ExportPasskeysAsync(string stickName, IReadOnlyList<byte[]> credentialIds, X509Certificate2 recipient)
     {
-        var manager = BackupManager(stickName);
+        var manager = BackupManager(stickName, importing: false);
         return Task.Run(() => manager.ExportPasskeysAsync(credentialIds, recipient));
     }
 
     public Task<PasskeyImportPreview> PreviewPasskeyImportAsync(string stickName, byte[] backup, X509Certificate2 recipient)
     {
-        var manager = BackupManager(stickName);
+        var manager = BackupManager(stickName, importing: true);
         return Task.Run(() => manager.PreviewPasskeyImportAsync(backup, recipient));
     }
 
     public Task<PasskeyImportResult> ImportPasskeysAsync(string stickName, byte[] backup, X509Certificate2 recipient)
     {
-        var manager = BackupManager(stickName);
+        var manager = BackupManager(stickName, importing: true);
         return Task.Run(() => manager.ImportPasskeysAsync(backup, recipient));
     }
 
-    private IPasskeyBackupManager BackupManager(string stickName) =>
-        RequireConnected(stickName).SecretManager is IPasskeyBackupManager { SupportsPasskeyBackup: true } manager
-            ? manager : throw new NotSupportedException("Passkey backup is currently supported by memory and file stores only.");
-
+    private IPasskeyBackupManager BackupManager(string stickName, bool importing)
+    {
+        var manager = RequireConnected(stickName).SecretManager as IPasskeyBackupManager;
+        if (manager == null || (importing ? !manager.SupportsPasskeyImport : !manager.SupportsPasskeyBackup))
+            throw new NotSupportedException(importing ? "This backend does not support passkey import." : "This backend does not support private-key export.");
+        return manager;
+    }
     private ConnectedStick RequireConnected(string stickName) =>
         _connected.TryGetValue(stickName, out var connectedStick)
             ? connectedStick
@@ -184,6 +190,14 @@ public sealed class StickManager : IStickManager
                 var keyStore = new SecretManager.FileBasedSecretStore.FileBasedSecretStore(_configStore.GetKeyStoreDirectory(config.Name), username, password, _configStore.GetAttestationCertificateDirectory(config.Name), _configStore.GetStickDirectory(config.Name));
                 var credentialStore = new FileBasedCredentialStore(_configStore.GetCredentialStoreDirectory(config.Name), username, password, _configStore.GetStickDirectory(config.Name));
                 return new Fido2SecretManager(keyStore, credentialStore);
+            }
+
+            case TpmSecretManagerConfig tpmConfig:
+            {
+                var credentials = await _credentialPrompt.RequestCredentialsAsync(config.Name, requireUsername: true, tpmConfig.Username);
+                if (credentials == null) return null;
+                var (username, password) = credentials.Value;
+                return await Task.Run(() => TpmStickProvisioning.Open(_configStore, config, username, password));
             }
 
             case MtlsSecretManagerConfig mtlsConfig:

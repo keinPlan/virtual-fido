@@ -8,14 +8,15 @@ namespace VFido.SecretManager;
 public sealed record TransferIdentity(byte[] Certificate, byte[] PasswordProtectedPfx, string Fingerprint);
 
 /// <summary>
-/// VirtualFido-specific encrypted backup, not the FIDO CXP protocol or a CXF document.
+/// Certificate-encrypted CXF structure with VirtualFido metadata and counter extensions.
+/// Nonzero counters are preserved; this profile does not claim strict CXF/CXP conformance.
 /// AES-256-GCM protects the payload; RSA-OAEP-SHA256 wraps its fresh random key.
 /// </summary>
 public static class PasskeyBackup
 {
     public const int MaximumFileSize = 64 * 1024 * 1024;
     private const int MaximumPlaintextSize = 32 * 1024 * 1024;
-    private const string Format = "VirtualFido.PasskeyBackup";
+    private const string Format = "VirtualFido.EncryptedCxf";
     private const string Algorithm = "RSA-OAEP-SHA256+A256GCM";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { MaxDepth = 16 };
 
@@ -48,7 +49,7 @@ public static class PasskeyBackup
     internal static byte[] Encrypt(IReadOnlyList<BackupCredential> credentials, X509Certificate2 recipient)
     {
         ValidateRecipient(recipient);
-        var plaintext = JsonSerializer.SerializeToUtf8Bytes(new Payload(1, credentials), Json);
+        var plaintext = CxfPasskeyFormat.Serialize(credentials);
         var key = RandomNumberGenerator.GetBytes(32);
         try
         {
@@ -94,11 +95,7 @@ public static class PasskeyBackup
             if (key.Length != 32) throw new InvalidDataException("Invalid backup encryption key.");
             using var aes = new AesGcm(key, 16);
             aes.Decrypt(envelope.Nonce, envelope.Ciphertext, envelope.Tag, plaintext, AssociatedData(envelope));
-            var payload = JsonSerializer.Deserialize<Payload>(plaintext, Json)
-                ?? throw new InvalidDataException("Missing backup payload.");
-            credentials = payload.Credentials;
-            if (payload.Version != 1 || credentials == null || credentials.Count is < 1 or > 10000)
-                throw new InvalidDataException("Unsupported or empty backup payload.");
+            credentials = CxfPasskeyFormat.Deserialize(plaintext);
             var ids = new HashSet<string>(StringComparer.Ordinal);
             foreach (var credential in credentials)
             {
@@ -133,7 +130,6 @@ public static class PasskeyBackup
 
     private sealed record Envelope(string Format, int Version, string Algorithm, string Recipient,
         byte[] WrappedKey, byte[] Nonce, byte[] Ciphertext, byte[] Tag);
-    private sealed record Payload(int Version, IReadOnlyList<BackupCredential> Credentials);
 }
 
 internal sealed record BackupCredential(CredentialInfo Metadata, byte[] PrivateKeyPkcs8)

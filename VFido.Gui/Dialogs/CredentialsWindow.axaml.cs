@@ -40,12 +40,15 @@ public partial class CredentialsWindow : Window
     {
         CredentialListPanel.Children.Clear();
         _selections.Clear();
-        var supported = _stickManager!.SupportsPasskeyBackup(_stick!.Name);
-        ExportButton.IsEnabled = ImportButton.IsEnabled = supported;
-        TransferHint.Text = supported
+        var supportsExport = _stickManager!.SupportsPasskeyBackup(_stick!.Name);
+        var supportsImport = _stickManager.SupportsPasskeyImport(_stick.Name);
+        ExportButton.IsEnabled = supportsExport;
+        ImportButton.IsEnabled = supportsImport;
+        TransferHint.Text = supportsExport
             ? "Encrypted VirtualFido backup: export with a public CER; restore with its private PFX. Keep the PFX and password safe."
-            : "Passkey backup and import currently support memory and file stores. This backend does not support them.";
-
+            : supportsImport
+                ? "Passkey import is available. TPM private keys cannot be exported. To recover this stick, keep its master recovery PFX, stick folder, and metadata password."
+                : "This backend does not support passkey backup or import.";
         IReadOnlyList<CredentialInfo> credentials;
         try
         {
@@ -77,7 +80,7 @@ public partial class CredentialsWindow : Window
         });
         infoPanel.Children.Add(new TextBlock
         {
-            Text = $"{(credential.IsResident ? "Resident" : "Non-resident")}  ·  sign count {credential.SignCount}  ·  credProtect {credential.CredProtect}",
+            Text = $"{(credential.IsResident ? "Resident" : "Non-resident")}  Â·  sign count {credential.SignCount}  Â·  credProtect {credential.CredProtect}",
             Foreground = Brushes.Gray,
             FontSize = 11,
         });

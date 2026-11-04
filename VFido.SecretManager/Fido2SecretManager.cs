@@ -10,32 +10,34 @@ namespace VFido.SecretManager
     /// method completes synchronously under the Task wrapper; a remote implementation of
     /// IFido2SecretManager would await a network call instead.
     /// </summary>
-    public sealed partial class Fido2SecretManager : IFido2SecretManager, IPasskeyBackupManager
+    public sealed partial class Fido2SecretManager : IFido2SecretManager, IPasskeyBackupManager, IDisposable
     {
         private readonly object _sync = new();
         private readonly IKeyStore _keys;
         private readonly ICredentialStore _credentials;
         private readonly IPinStateStore? _pinState;
 
-        public Fido2SecretManager(IKeyStore keys, ICredentialStore credentials)
+        private readonly bool _ownsKeyStore;
+        private bool _disposed;
+
+        public Fido2SecretManager(IKeyStore keys, ICredentialStore credentials, IPinStateStore? pinState = null, bool ownsKeyStore = false)
         {
             _keys = keys;
             _credentials = credentials;
-            // FileBasedSecretStore (the only IKeyStore that persists) implements IPinStateStore too -
-            // detecting it here means PIN persistence "just works" for any IKeyStore that opts in,
-            // without every caller having to thread a separate store through by hand.
-            _pinState = keys as IPinStateStore;
+            _pinState = pinState ?? keys as IPinStateStore;
+            _ownsKeyStore = ownsKeyStore;
         }
 
         public Task<byte[]> GetAaguidAsync()
         {
-            lock (_sync) { return Task.FromResult(_keys.Aaguid); }
+            lock (_sync) { ThrowIfDisposed(); return Task.FromResult(_keys.Aaguid); }
         }
 
         public Task<CredentialRegistration> CreateCredentialAsync(string rpId, byte[] userId, string userName, string userDisplayName, bool isResident, int credProtect)
         {
             lock (_sync)
             {
+                ThrowIfDisposed();
                 var key = _keys.CreateEs256Key();
                 var credentialId = RandomNumberGenerator.GetBytes(32);
 
@@ -58,13 +60,14 @@ namespace VFido.SecretManager
 
         public Task<bool> CredentialExistsAsync(byte[] credentialId, string rpId)
         {
-            lock (_sync) { return Task.FromResult(_credentials.Find(credentialId) is { } credential && credential.RpId == rpId); }
+            lock (_sync) { ThrowIfDisposed(); return Task.FromResult(_credentials.Find(credentialId) is { } credential && credential.RpId == rpId); }
         }
 
         public Task<CredentialInfo?> FindCredentialAsync(byte[] credentialId, string rpId)
         {
             lock (_sync)
             {
+                ThrowIfDisposed();
                 var credential = _credentials.Find(credentialId);
                 return Task.FromResult(credential != null && credential.RpId == rpId ? ToInfo(credential) : null);
             }
@@ -72,18 +75,19 @@ namespace VFido.SecretManager
 
         public Task<IReadOnlyList<CredentialInfo>> FindResidentCredentialsAsync(string rpId)
         {
-            lock (_sync) { return Task.FromResult<IReadOnlyList<CredentialInfo>>(_credentials.FindByRp(rpId).Where(c => c.IsResident).Select(ToInfo).ToList()); }
+            lock (_sync) { ThrowIfDisposed(); return Task.FromResult<IReadOnlyList<CredentialInfo>>(_credentials.FindByRp(rpId).Where(c => c.IsResident).Select(ToInfo).ToList()); }
         }
 
         public Task<IReadOnlyList<CredentialInfo>> FindAllCredentialsAsync()
         {
-            lock (_sync) { return Task.FromResult<IReadOnlyList<CredentialInfo>>(_credentials.FindAll().Select(ToInfo).ToList()); }
+            lock (_sync) { ThrowIfDisposed(); return Task.FromResult<IReadOnlyList<CredentialInfo>>(_credentials.FindAll().Select(ToInfo).ToList()); }
         }
 
         public Task DeleteCredentialAsync(byte[] credentialId)
         {
             lock (_sync)
             {
+                ThrowIfDisposed();
                 if (_credentials.Find(credentialId) is { } credential)
                     _keys.DeleteKey(credential.KeyHandle);
 
@@ -96,6 +100,7 @@ namespace VFido.SecretManager
         {
             lock (_sync)
             {
+                ThrowIfDisposed();
                 var credential = RequireCredential(credentialId);
                 credential.SignCount++;
                 // Must persist explicitly: ICredentialStore.Find isn't guaranteed to return a live,
@@ -111,6 +116,7 @@ namespace VFido.SecretManager
         {
             lock (_sync)
             {
+                ThrowIfDisposed();
                 var credential = RequireCredential(credentialId);
                 return Task.FromResult(_keys.LoadKey(credential.KeyHandle).Sign(data));
             }
@@ -118,13 +124,14 @@ namespace VFido.SecretManager
 
         public Task<IReadOnlyList<byte[]>> GetAttestationCertificateChainAsync()
         {
-            lock (_sync) { return Task.FromResult(_keys.GetOrCreateAttestationCertificate().CertificateChainDer); }
+            lock (_sync) { ThrowIfDisposed(); return Task.FromResult(_keys.GetOrCreateAttestationCertificate().CertificateChainDer); }
         }
 
         public Task<byte[]> SignWithAttestationKeyAsync(byte[] data)
         {
             lock (_sync)
             {
+                ThrowIfDisposed();
                 var attestation = _keys.GetOrCreateAttestationCertificate();
                 return Task.FromResult(_keys.LoadKey(attestation.KeyHandle).Sign(data));
             }
@@ -132,18 +139,30 @@ namespace VFido.SecretManager
 
         public Task<PinState?> LoadPinStateAsync()
         {
-            lock (_sync) { return Task.FromResult(_pinState?.Load()); }
+            lock (_sync) { ThrowIfDisposed(); return Task.FromResult(_pinState?.Load()); }
         }
 
         public Task SavePinStateAsync(PinState state)
         {
             lock (_sync)
             {
+                ThrowIfDisposed();
                 _pinState?.Save(state);
                 return Task.CompletedTask;
             }
         }
 
+        private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
+
+        public void Dispose()
+        {
+            lock (_sync)
+            {
+                if (_disposed) return;
+                _disposed = true;
+                if (_ownsKeyStore) (_keys as IDisposable)?.Dispose();
+            }
+        }
         private StoredCredential RequireCredential(byte[] credentialId) =>
             _credentials.Find(credentialId) ?? throw new InvalidOperationException("Unknown credential.");
 

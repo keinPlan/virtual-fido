@@ -11,6 +11,7 @@ namespace VFido.Gui.Configuration;
 [JsonDerivedType(typeof(MemorySecretManagerConfig), "memory")]
 [JsonDerivedType(typeof(FileSecretManagerConfig), "file")]
 [JsonDerivedType(typeof(MtlsSecretManagerConfig), "mtls")]
+[JsonDerivedType(typeof(TpmSecretManagerConfig), "tpm")]
 public abstract class SecretManagerConfig
 {
 }
@@ -49,4 +50,11 @@ public sealed class MtlsSecretManagerConfig : SecretManagerConfig
     /// their previous behavior.
     /// </summary>
     public bool RequiresLoginPassword { get; set; } = true;
+}
+
+/// <summary>TPM-wrapped keys, with password-encrypted credential metadata and PIN state.</summary>
+public sealed class TpmSecretManagerConfig : SecretManagerConfig
+{
+    public required string Username { get; set; }
+    public required string MasterName { get; set; }
 }

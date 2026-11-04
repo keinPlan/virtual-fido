@@ -1,6 +1,6 @@
 # VirtualFido
 
-VirtualFido is a Windows software FIDO2/CTAP2 security key. It emulates a USB security key device via USB/IP and a virtual host controller interface (VHCI), so the OS and browsers see it as a real hardware authenticator — without needing a physical key.
+VirtualFido is a Windows software FIDO2/CTAP2 security key. It emulates a USB security key device via USB/IP and a virtual host controller interface (VHCI), so the OS and browsers see it as a real hardware authenticator â€” without needing a physical key.
 
 ## How it works
 
@@ -42,16 +42,16 @@ flowchart TB
 - **VFido.Core** implements the CTAP2 authenticator protocol (`MakeCredential`, `GetAssertion`, `ClientPin`, `GetInfo`, ...), CTAP HID framing, and a USB/IP server that presents the virtual device over the VHCI driver so Windows recognizes it as a USB HID FIDO device.
 - **VFido.Gui** is an [Avalonia](https://avaloniaui.net/) desktop application that runs the virtual authenticator, shows a user-presence approval window for each authentication request, and lets you manage stored credentials.
 - **VFido.SecretManager** defines the credential/secret storage abstraction, with pluggable backends:
-  - `VFido.SecretManager.MemoryBasedSecretStore` — in-memory, non-persistent.
-  - `VFido.SecretManager.FileBasedSecretStore` — encrypted on-disk storage.
-  - `VFido.SecretManager.MtlsBasedSecretStoreClient` / `...Server` — remote secret storage over mutual-TLS, allowing credentials to be kept on a separate machine/service. The server runs its own CA (`Pki/CaManager`) and issues each user a client certificate; the certificate's CN identifies the user (there's no client-supplied username), and users created with a password additionally exchange it for a short-lived session token via `/login` before their first request — passwordless (`--no-password`) users authenticate with the mTLS handshake alone. Provisioning (CA init, user creation/revocation) is done via the server's admin CLI (`Cli/AdminCommands`, e.g. `init`, `create-user`, `revoke-user`).
+  - `VFido.SecretManager.MemoryBasedSecretStore` â€” in-memory, non-persistent.
+  - `VFido.SecretManager.FileBasedSecretStore` â€” encrypted on-disk storage.
+  - `VFido.SecretManager.MtlsBasedSecretStoreClient` / `...Server` â€” remote secret storage over mutual-TLS, allowing credentials to be kept on a separate machine/service. The server runs its own CA (`Pki/CaManager`) and issues each user a client certificate; the certificate's CN identifies the user (there's no client-supplied username), and users created with a password additionally exchange it for a short-lived session token via `/login` before their first request â€” passwordless (`--no-password`) users authenticate with the mTLS handshake alone. Provisioning (CA init, user creation/revocation) is done via the server's admin CLI (`Cli/AdminCommands`, e.g. `init`, `create-user`, `revoke-user`).
 - **VirtualFido.Tests** contains the test suite.
 
 ## Requirements
 
 - Windows 10/11
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- A VHCI-capable USB/IP driver installed on the host (required for the virtual device to appear as a real USB device) — see [usbip-win2](https://github.com/vadimgrn/usbip-win2) (bundled here as [USBip-0.9.7.3-x64-release.exe](USBip-0.9.7.3-x64-release.exe?raw=true))
+- A VHCI-capable USB/IP driver installed on the host (required for the virtual device to appear as a real USB device) â€” see [usbip-win2](https://github.com/vadimgrn/usbip-win2) (bundled here as [USBip-0.9.7.3-x64-release.exe](USBip-0.9.7.3-x64-release.exe?raw=true))
 
 ## Building
 
@@ -114,6 +114,12 @@ The backup preserves credential IDs, RP IDs, user handles, ES256/P-256 private k
 
 Each export uses a fresh AES-256-GCM key and nonce; RSA-OAEP-SHA256 encrypts the AES key for the recipient certificate. The version, encryption algorithm, certificate fingerprint, and wrapped key are authenticated with the payload. Private-key and account data are inside the encrypted payload. Encryption does not authenticate the sender: anyone with the public CER can create a backup addressed to it. Only import files from a trusted source.
 
-The generated RSA-3072 recipient certificate lasts five years. Expired certificates cannot be used for new exports, but their private keys can still restore old backups. Files are limited to 64 MiB and batches to 10,000 credentials. mTLS remote stores and TPM stores do not currently expose backup/import capabilities.
+The generated RSA-3072 recipient certificate lasts five years. Expired certificates cannot be used for new exports, but their private keys can still restore old backups. Files are limited to 64 MiB and batches to 10,000 credentials. TPM stores support backup import while private-key export stays disabled. mTLS remote stores do not currently expose backup/import capabilities.
 
 This is a **VirtualFido-specific backup format**, not FIDO CXP or a CXF-conformant export. [CXF 1.0](https://fidoalliance.org/specs/cx/cxf-v1.0-ps-20250814.html#dict-passkey) excludes credentials with nonzero signature counters, whereas this backup preserves existing VirtualFido counters. Restoring an old backup or using multiple copies concurrently can cause relying parties to detect counter regressions and reject sign-ins. This feature does not change credential backup eligibility, copy authenticator PINs or attestation keys, or delete source credentials.
+
+### TPM-backed sticks (Windows)
+
+In **Add stick**, choose **TPM 2.0 (Windows)**. Select a master recovery PFX or create a new one, then set a separate username and metadata password. Connect uses the metadata password; the PFX password is needed only during setup or recovery. PIN state and retry counts persist across reconnects.
+
+To recover a copied stick folder on another TPM, disconnect it and use **Edit > Restore master on this TPM** with the original PFX. Keep the PFX, its password, the complete stick folder, and the metadata password. See [TPM setup and recovery](VFido.SecretManager.TpmBasedSecretStore/README.md) for details.

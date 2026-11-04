@@ -46,6 +46,7 @@ public interface IStickManager
     Task DeleteCredentialAsync(string stickName, byte[] credentialId);
 
     bool SupportsPasskeyBackup(string stickName);
+    bool SupportsPasskeyImport(string stickName) => SupportsPasskeyBackup(stickName);
     Task<byte[]> ExportPasskeysAsync(string stickName, IReadOnlyList<byte[]> credentialIds, X509Certificate2 recipient);
     Task<PasskeyImportPreview> PreviewPasskeyImportAsync(string stickName, byte[] backup, X509Certificate2 recipient);
     Task<PasskeyImportResult> ImportPasskeysAsync(string stickName, byte[] backup, X509Certificate2 recipient);
