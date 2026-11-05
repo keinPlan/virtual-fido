@@ -8,16 +8,6 @@
         ShowInTaskbar="False">
     <ScrollViewer MaxHeight="600">
         <StackPanel Margin="16" Spacing="12">
-            <StackPanel Spacing="4">
-                <TextBlock Text="Name"/>
-                <TextBox x:Name="NameBox" MaxLength="32" Watermark="Letters, digits, '.', '_', '-' - no spaces"/>
-            </StackPanel>
-
-            <StackPanel Spacing="4">
-                <TextBlock Text="Serial number"/>
-                <TextBox x:Name="SerialNumberBox"/>
-            </StackPanel>
-
             <StackPanel x:Name="SecretManagerSection" Spacing="4">
                 <TextBlock Text="Secret manager"/>
                 <ComboBox x:Name="SecretManagerTypeBox" HorizontalAlignment="Stretch" SelectionChanged="SecretManagerType_SelectionChanged">
@@ -26,6 +16,15 @@
                     <ComboBoxItem Content="mTLS server"/>
                     <ComboBoxItem Content="TPM 2.0 (Windows)"/>
                 </ComboBox>
+            </StackPanel>
+            <StackPanel Spacing="4">
+                <TextBlock Text="Name"/>
+                <TextBox x:Name="NameBox" MaxLength="32" Watermark="Letters, digits, '.', '_', '-' - no spaces"/>
+            </StackPanel>
+
+            <StackPanel Spacing="4">
+                <TextBlock Text="Serial number"/>
+                <TextBox x:Name="SerialNumberBox"/>
             </StackPanel>
 
             <StackPanel x:Name="FilePanel" Spacing="12" IsVisible="False">
