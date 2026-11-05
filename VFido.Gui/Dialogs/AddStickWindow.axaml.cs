@@ -27,9 +27,9 @@ public partial class AddStickWindow : Window
         InitializeComponent();
         Closing += (_, e) => { if (_busy) e.Cancel = true; };
         Closed += (_, _) => ClearTpmPasswords();
-        NameBox.Text = "VFido-FileBased";
+        NameBox.Text = "VFido-TPM";
         SerialNumberBox.Text = "VFIDO-" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
-        SecretManagerTypeBox.SelectedIndex = 1;
+        SecretManagerTypeBox.SelectedIndex = 3;
     }
 
     public static async Task<StickConfig?> ShowAsync(Window owner, IStickConfigStore configStore)
@@ -88,6 +88,17 @@ public partial class AddStickWindow : Window
         FilePanel.IsVisible = SecretManagerTypeBox.SelectedIndex == 1;
         MtlsPanel.IsVisible = SecretManagerTypeBox.SelectedIndex == 2;
         TpmPanel.IsVisible = SecretManagerTypeBox.SelectedIndex == 3;
+        if (_existing == null)
+        {
+            NameBox.Text = SecretManagerTypeBox.SelectedIndex switch
+            {
+                0 => "VFido-Memory",
+                1 => "VFido-FileBased",
+                2 => "VFido-mTLS",
+                3 => "VFido-TPM",
+                _ => NameBox.Text,
+            };
+        }
     }
 
     private async void BrowseTpmPfx_Click(object? sender, RoutedEventArgs e) => await BrowseForCertAsync(TpmPfxPathBox);
