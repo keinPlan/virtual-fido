@@ -22,6 +22,7 @@ public partial class CredentialsWindow : Window
     public CredentialsWindow()
     {
         InitializeComponent();
+        DialogChrome.Apply(this);
     }
 
     public static async Task ShowAsync(Window owner, IStickManager stickManager, StickConfig stick)

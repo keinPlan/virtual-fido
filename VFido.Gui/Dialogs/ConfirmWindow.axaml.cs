@@ -10,6 +10,7 @@ public partial class ConfirmWindow : Window
     public ConfirmWindow()
     {
         InitializeComponent();
+        DialogChrome.Apply(this);
     }
 
     public ConfirmWindow(string title, string message, string confirmText) : this()

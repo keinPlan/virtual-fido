@@ -8,6 +8,8 @@
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaTitleBarHeightHint="40"
         TransparencyLevelHint="None">
+    <Border CornerRadius="12" ClipToBounds="True" BorderBrush="#232634" BorderThickness="1"
+            Background="{DynamicResource VFidoSurfaceBrush}">
     <Grid RowDefinitions="40,*">
         <Border Grid.Row="0"
                 Background="#232634"
@@ -27,10 +29,11 @@
         </Border>
 
         <Grid Grid.Row="1" Margin="16" RowDefinitions="Auto,*">
-            <Button Grid.Row="0" Content="+ Add stick" Click="AddStick_Click" HorizontalAlignment="Left" Margin="0,0,0,12"/>
+            <Button Grid.Row="0" Classes="primary" Content="+ Add stick" Click="AddStick_Click" HorizontalAlignment="Left" Margin="0,0,0,12"/>
             <ScrollViewer Grid.Row="1">
                 <StackPanel x:Name="StickListPanel" Spacing="8"/>
             </ScrollViewer>
         </Grid>
     </Grid>
+    </Border>
 </Window>

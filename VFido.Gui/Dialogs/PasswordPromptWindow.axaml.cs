@@ -10,6 +10,7 @@ public partial class PasswordPromptWindow : Window
     public PasswordPromptWindow()
     {
         InitializeComponent();
+        DialogChrome.Apply(this);
         Opened += (_, _) => PasswordBox.Focus();
     }
 

@@ -129,6 +129,7 @@ public partial class MainWindow : Window
         credentialsButton.Click += async (_, _) => await CredentialsWindow.ShowAsync(this, _stickManager, stick);
 
         var connectButton = new Button { Content = busy ? operation : connected ? "Disconnect" : "Connect", MinWidth = 100, IsEnabled = !busy };
+        if (!connected) connectButton.Classes.Add("primary");
         connectButton.Click += async (_, _) => await ToggleConnectAsync(stick, connected);
 
         var buttonsPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -142,14 +143,16 @@ public partial class MainWindow : Window
         grid.Children.Add(infoPanel);
         grid.Children.Add(buttonsPanel);
 
-        return new Border
+        var card = new Border
         {
             Padding = new Avalonia.Thickness(12),
-            CornerRadius = new Avalonia.CornerRadius(6),
-            BorderBrush = Brushes.Gray,
+            CornerRadius = new Avalonia.CornerRadius(8),
+            BorderBrush = Brush.Parse("#555B70"),
             BorderThickness = new Avalonia.Thickness(1),
             Child = grid,
         };
+        card.Bind(Border.BackgroundProperty, this.GetResourceObservable("VFidoCardBrush"));
+        return card;
     }
 
     private async void AddStick_Click(object? sender, RoutedEventArgs e)

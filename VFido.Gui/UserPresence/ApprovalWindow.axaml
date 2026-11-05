@@ -11,7 +11,7 @@
         TransparencyLevelHint="Transparent"
         SystemDecorations="None">
     <Border CornerRadius="12"
-            Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+            Background="{DynamicResource VFidoSurfaceBrush}"
             BorderBrush="#232634" BorderThickness="1"
             ClipToBounds="True">
         <Grid RowDefinitions="Auto,*,Auto">
@@ -30,7 +30,7 @@
             <!-- Body -->
             <StackPanel Grid.Row="1" Margin="16,14" Spacing="10">
                 <TextBlock x:Name="OperationText" FontSize="14" FontWeight="Medium" TextWrapping="Wrap"/>
-                <Border Background="{DynamicResource SystemControlBackgroundListLowBrush}" CornerRadius="6" Padding="10,6">
+                <Border Background="{DynamicResource VFidoCardBrush}" CornerRadius="6" Padding="10,6">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <TextBlock Text="🌐" FontSize="13" VerticalAlignment="Center"/>
                         <TextBlock x:Name="RpText" FontSize="12" FontWeight="Medium"
@@ -41,7 +41,7 @@
 
                 <StackPanel Spacing="4">
                     <ProgressBar x:Name="CountdownBar" Height="4" Minimum="0" CornerRadius="2"
-                                 Foreground="#FF7A1A" BorderThickness="0"/>
+                                 Foreground="{DynamicResource VFidoAccentBrush}" BorderThickness="0"/>
                     <TextBlock x:Name="CountdownText" Foreground="Gray" FontSize="11" HorizontalAlignment="Right"/>
                 </StackPanel>
             </StackPanel>
@@ -49,15 +49,7 @@
             <!-- Actions -->
             <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16,0,16,16" Spacing="8">
                 <Button Content="Deny" Width="90" Click="Deny_Click" CornerRadius="6"/>
-                <Button Content="Approve" Width="100" Click="Approve_Click" IsDefault="True" CornerRadius="6">
-                    <Button.Background>
-                        <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
-                            <GradientStop Color="#FFA83A" Offset="0"/>
-                            <GradientStop Color="#FF6A00" Offset="1"/>
-                        </LinearGradientBrush>
-                    </Button.Background>
-                    <Button.Foreground>White</Button.Foreground>
-                </Button>
+                <Button Content="Approve" Width="100" Click="Approve_Click" IsDefault="True" CornerRadius="6"/>
             </StackPanel>
         </Grid>
     </Border>

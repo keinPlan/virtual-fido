@@ -8,6 +8,7 @@ public partial class MessageWindow : Window
     public MessageWindow()
     {
         InitializeComponent();
+        DialogChrome.Apply(this);
     }
 
     public MessageWindow(string title, string message) : this()

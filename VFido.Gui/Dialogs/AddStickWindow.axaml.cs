@@ -25,6 +25,7 @@ public partial class AddStickWindow : Window
     public AddStickWindow()
     {
         InitializeComponent();
+        DialogChrome.Apply(this);
         Closing += (_, e) => { if (_busy) e.Cancel = true; };
         Closed += (_, _) => ClearTpmPasswords();
         NameBox.Text = "VFido-TPM";

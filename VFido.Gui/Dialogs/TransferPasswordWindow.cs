@@ -52,6 +52,7 @@ internal sealed class TransferPasswordWindow : Window
         panel.Children.Add(error);
         panel.Children.Add(buttons);
         window.Content = panel;
+        DialogChrome.Apply(window);
         return window.ShowDialog<string?>(owner);
     }
 }
