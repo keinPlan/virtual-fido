@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Formats.Asn1;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -10,6 +11,7 @@ namespace VFido.SecretManager.TpmBasedSecretStore;
 /// <summary>Externally provisioned, portable storage parent with TPM-only runtime signing.</summary>
 public sealed class TpmBasedSecretStore : IKeyStore, ICredentialKeyImporter, IDisposable
 {
+    private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
     private const string MasterFile = "master.json";
     // One shared cache for this application's deterministic owner primary. Never evict an occupant.
     private const uint PrimaryCacheHandle = 0x81015646;
@@ -33,6 +35,8 @@ public sealed class TpmBasedSecretStore : IKeyStore, ICredentialKeyImporter, IDi
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, MasterFile);
         if (File.Exists(path)) throw new IOException("This directory already contains a local master. Use a new destination for recovery.");
+        var timer = Stopwatch.StartNew();
+        Logger.Info("Provisioning TPM-wrapped master.");
         using var tpm = Connect(deviceFactory);
         var primary = CreatePrimary(tpm, ownerAuthorization, out var primaryPublic);
         try
@@ -48,6 +52,7 @@ public sealed class TpmBasedSecretStore : IKeyStore, ICredentialKeyImporter, IDi
                     var loaded = tpm.Load(primary, imported, source.Public);
                     tpm.FlushContext(loaded);
                     WriteNew(path, new LocalMaster(1, primaryPublic.GetName(), source.Public.GetTpmRepresentation(), imported.buffer));
+                    Logger.Info("TPM master provisioned in {0} ms.", timer.ElapsedMilliseconds);
                 }
                 finally { CryptographicOperations.ZeroMemory(secret); }
             }
@@ -59,6 +64,8 @@ public sealed class TpmBasedSecretStore : IKeyStore, ICredentialKeyImporter, IDi
     /// <summary>Open using the local TPM-wrapped master; the recovery PFX is not required.</summary>
     public TpmBasedSecretStore(string directory, Func<Tpm2Device>? deviceFactory = null, byte[]? ownerAuthorization = null)
     {
+        var timer = Stopwatch.StartNew();
+        Logger.Info("Opening TPM secret store.");
         _directory = directory;
         var local = Read<LocalMaster>(Path.Combine(directory, MasterFile));
         if (local.Version != 1) throw new InvalidDataException("Unsupported local master format.");
@@ -71,17 +78,23 @@ public sealed class TpmBasedSecretStore : IKeyStore, ICredentialKeyImporter, IDi
             primary = FindCachedPrimary(_tpm, local.PrimaryName);
             if (primary == null)
             {
+                Logger.Info("No matching cached TPM primary; creating a transient primary.");
                 primary = CreatePrimary(_tpm, ownerAuthorization, out var primaryPublic);
                 _primaryIsTransient = true;
                 if (!primaryPublic.GetName().AsSpan().SequenceEqual(local.PrimaryName))
                     throw new CryptographicException("Local master belongs to a different TPM or hierarchy. Restore from the recovery PFX.");
                 TryCachePrimary(_tpm, primary, local.PrimaryName, ownerAuthorization);
             }
+            var loadTimer = Stopwatch.StartNew();
+            Logger.Debug("Loading TPM-wrapped master.");
             _master = _tpm.Load(primary, new TpmPrivate(local.Private), _masterPublic);
+            Logger.Debug("TPM master loaded in {0} ms.", loadTimer.ElapsedMilliseconds);
             _primary = primary;
+            Logger.Info("TPM secret store opened in {0} ms (cached primary: {1}).", timer.ElapsedMilliseconds, !_primaryIsTransient);
         }
         catch
         {
+            Logger.Error("Opening TPM secret store failed after {0} ms (TPM response: {1}).", timer.ElapsedMilliseconds, _tpm._GetLastResponseCode());
             try { if (primary != null && _primaryIsTransient) _tpm.FlushContext(primary); }
             finally { _tpm.Dispose(); }
             throw;
@@ -285,16 +298,40 @@ public sealed class TpmBasedSecretStore : IKeyStore, ICredentialKeyImporter, IDi
     }
     private static Tpm2 Connect(Func<Tpm2Device>? factory)
     {
+        var timer = Stopwatch.StartNew();
         var device = factory?.Invoke() ?? new TbsDevice();
-        try { device.Connect(); return new Tpm2(device); }
-        catch { device.Dispose(); throw; }
+        Logger.Debug("Connecting TPM transport {0}.", device.GetType().Name);
+        try
+        {
+            device.Connect();
+            Logger.Debug("TPM transport connected in {0} ms.", timer.ElapsedMilliseconds);
+            return new Tpm2(device);
+        }
+        catch
+        {
+            Logger.Error("TPM transport connection failed after {0} ms.", timer.ElapsedMilliseconds);
+            device.Dispose();
+            throw;
+        }
     }
     private static TpmHandle CreatePrimary(Tpm2 tpm, byte[]? ownerAuthorization, out TpmPublic pub)
     {
         var owner = new TpmHandle(TpmRh.Owner) { Auth = ownerAuthorization ?? Array.Empty<byte>() };
-        return tpm.CreatePrimary(owner, new SensitiveCreate(Array.Empty<byte>(), Array.Empty<byte>()),
-            TpmMasterKey.StorageTemplate(Array.Empty<byte>(), primary: true), Array.Empty<byte>(), Array.Empty<PcrSelection>(),
-            out pub, out _, out _, out _);
+        var timer = Stopwatch.StartNew();
+        Logger.Info("Starting TPM2_CreatePrimary (RSA-2048); this may take tens of seconds.");
+        try
+        {
+            var primary = tpm.CreatePrimary(owner, new SensitiveCreate(Array.Empty<byte>(), Array.Empty<byte>()),
+                TpmMasterKey.StorageTemplate(Array.Empty<byte>(), primary: true), Array.Empty<byte>(), Array.Empty<PcrSelection>(),
+                out pub, out _, out _, out _);
+            Logger.Info("TPM2_CreatePrimary completed in {0} ms.", timer.ElapsedMilliseconds);
+            return primary;
+        }
+        catch
+        {
+            Logger.Error("TPM2_CreatePrimary failed after {0} ms (TPM response: {1}).", timer.ElapsedMilliseconds, tpm._GetLastResponseCode());
+            throw;
+        }
     }
     private static TpmHandle? FindCachedPrimary(Tpm2 tpm, byte[] expectedName)
     {
@@ -303,11 +340,18 @@ public sealed class TpmBasedSecretStore : IKeyStore, ICredentialKeyImporter, IDi
         {
             // Never trust a persistent handle alone: another application may have reused it.
             var pub = tpm.ReadPublic(handle, out _, out _);
-            return pub.GetName().AsSpan().SequenceEqual(expectedName) ? handle : null;
+            if (pub.GetName().AsSpan().SequenceEqual(expectedName))
+            {
+                Logger.Info("Verified persistent TPM primary at 0x{0:X8}.", PrimaryCacheHandle);
+                return handle;
+            }
+            Logger.Warn("TPM primary cache handle 0x{0:X8} contains a different object; leaving it intact.", PrimaryCacheHandle);
+            return null;
         }
         catch (TpmException)
         {
             // Missing handle or a TPM that does not permit access to persistent objects.
+            Logger.Debug("TPM primary cache unavailable at 0x{0:X8} (TPM response: {1}).", PrimaryCacheHandle, tpm._GetLastResponseCode());
             return null;
         }
     }
@@ -316,14 +360,17 @@ public sealed class TpmBasedSecretStore : IKeyStore, ICredentialKeyImporter, IDi
         if (FindCachedPrimary(tpm, expectedName) != null) return;
         try
         {
+            Logger.Debug("Persisting TPM primary at 0x{0:X8}.", PrimaryCacheHandle);
             var owner = new TpmHandle(TpmRh.Owner) { Auth = ownerAuthorization ?? Array.Empty<byte>() };
             // primary is always transient. EvictControl therefore only adds a persistent copy;
             // an occupied destination (including a concurrent creator) fails without replacing it.
             tpm.EvictControl(owner, primary, new TpmHandle(PrimaryCacheHandle));
+            Logger.Info("TPM primary cached at 0x{0:X8}; future connections can skip TPM2_CreatePrimary.", PrimaryCacheHandle);
         }
         catch (TpmException)
         {
             // Caching is optional: owner authorization, OS policy, or NV space may prevent it.
+            Logger.Warn("TPM primary caching failed (TPM response: {0}); continuing with transient primary. Future connections may remain slow.", tpm._GetLastResponseCode());
         }
     }
     private static void ClearSensitive(Sensitive sensitive)

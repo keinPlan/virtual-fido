@@ -8,6 +8,8 @@ RSA primary creation can take tens of seconds on some TPMs. After creating and v
 
 Caching requires permission to persist an object under the owner hierarchy and available TPM NV space. If Windows policy, owner authorization, or an occupied handle prevents caching, connections retain the transient-primary behavior and its creation delay. The backend never replaces an occupied handle or evicts the cached primary on disconnect. A missing or mismatched cache falls back to recreating and validating the original primary; a TPM clear still requires recovery. The first setup or uncached connection can therefore remain slow.
 
+Connection diagnostics use the application's NLog configuration. Info messages report primary creation and total opening time in milliseconds, cache verification, and successful persistence. Debug messages include transport and master-loading timings; warnings explain cache mismatches or persistence failures with TPM response codes. In the GUI these appear in `logs/<date>.log` beside the executable and in console/debugger output. Authorization bytes, passwords, key material, and credential data are not logged.
+
 ## Recovery PFX
 
 ```csharp
