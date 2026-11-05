@@ -11,10 +11,13 @@ namespace VFido.SecretManager.TpmBasedSecretStore;
 public sealed class TpmBasedSecretStore : IKeyStore, ICredentialKeyImporter, IDisposable
 {
     private const string MasterFile = "master.json";
+    // One shared cache for this application's deterministic owner primary. Never evict an occupant.
+    private const uint PrimaryCacheHandle = 0x81015646;
     private readonly object _sync = new();
     private readonly string _directory;
     private readonly Tpm2 _tpm;
     private readonly TpmHandle _primary;
+    private readonly bool _primaryIsTransient;
     private readonly TpmHandle _master;
     private readonly byte[] _masterName;
     private readonly TpmPublic _masterPublic;
@@ -34,6 +37,7 @@ public sealed class TpmBasedSecretStore : IKeyStore, ICredentialKeyImporter, IDi
         var primary = CreatePrimary(tpm, ownerAuthorization, out var primaryPublic);
         try
         {
+            TryCachePrimary(tpm, primary, primaryPublic.GetName(), ownerAuthorization);
             var source = master.ToImportObject();
             try
             {
@@ -64,15 +68,21 @@ public sealed class TpmBasedSecretStore : IKeyStore, ICredentialKeyImporter, IDi
         TpmHandle? primary = null;
         try
         {
-            primary = CreatePrimary(_tpm, ownerAuthorization, out var primaryPublic);
-            if (!primaryPublic.GetName().AsSpan().SequenceEqual(local.PrimaryName))
-                throw new CryptographicException("Local master belongs to a different TPM or hierarchy. Restore from the recovery PFX.");
+            primary = FindCachedPrimary(_tpm, local.PrimaryName);
+            if (primary == null)
+            {
+                primary = CreatePrimary(_tpm, ownerAuthorization, out var primaryPublic);
+                _primaryIsTransient = true;
+                if (!primaryPublic.GetName().AsSpan().SequenceEqual(local.PrimaryName))
+                    throw new CryptographicException("Local master belongs to a different TPM or hierarchy. Restore from the recovery PFX.");
+                TryCachePrimary(_tpm, primary, local.PrimaryName, ownerAuthorization);
+            }
             _master = _tpm.Load(primary, new TpmPrivate(local.Private), _masterPublic);
             _primary = primary;
         }
         catch
         {
-            try { if (primary != null) _tpm.FlushContext(primary); }
+            try { if (primary != null && _primaryIsTransient) _tpm.FlushContext(primary); }
             finally { _tpm.Dispose(); }
             throw;
         }
@@ -286,6 +296,36 @@ public sealed class TpmBasedSecretStore : IKeyStore, ICredentialKeyImporter, IDi
             TpmMasterKey.StorageTemplate(Array.Empty<byte>(), primary: true), Array.Empty<byte>(), Array.Empty<PcrSelection>(),
             out pub, out _, out _, out _);
     }
+    private static TpmHandle? FindCachedPrimary(Tpm2 tpm, byte[] expectedName)
+    {
+        var handle = new TpmHandle(PrimaryCacheHandle);
+        try
+        {
+            // Never trust a persistent handle alone: another application may have reused it.
+            var pub = tpm.ReadPublic(handle, out _, out _);
+            return pub.GetName().AsSpan().SequenceEqual(expectedName) ? handle : null;
+        }
+        catch (TpmException)
+        {
+            // Missing handle or a TPM that does not permit access to persistent objects.
+            return null;
+        }
+    }
+    private static void TryCachePrimary(Tpm2 tpm, TpmHandle primary, byte[] expectedName, byte[]? ownerAuthorization)
+    {
+        if (FindCachedPrimary(tpm, expectedName) != null) return;
+        try
+        {
+            var owner = new TpmHandle(TpmRh.Owner) { Auth = ownerAuthorization ?? Array.Empty<byte>() };
+            // primary is always transient. EvictControl therefore only adds a persistent copy;
+            // an occupied destination (including a concurrent creator) fails without replacing it.
+            tpm.EvictControl(owner, primary, new TpmHandle(PrimaryCacheHandle));
+        }
+        catch (TpmException)
+        {
+            // Caching is optional: owner authorization, OS policy, or NV space may prevent it.
+        }
+    }
     private static void ClearSensitive(Sensitive sensitive)
     {
         CryptographicOperations.ZeroMemory(sensitive.seedValue);
@@ -317,7 +357,7 @@ public sealed class TpmBasedSecretStore : IKeyStore, ICredentialKeyImporter, IDi
             if (_disposed) return;
             _disposed = true;
             try { _tpm.FlushContext(_master); }
-            finally { try { _tpm.FlushContext(_primary); } finally { _tpm.Dispose(); } }
+            finally { try { if (_primaryIsTransient) _tpm.FlushContext(_primary); } finally { _tpm.Dispose(); } }
         }
     }
     private sealed record LocalMaster(int Version, byte[] PrimaryName, byte[] Public, byte[] Private);
