@@ -10,6 +10,7 @@ public partial class PasswordPromptWindow : Window
     public PasswordPromptWindow()
     {
         InitializeComponent();
+        Opened += (_, _) => PasswordBox.Focus();
     }
 
     public PasswordPromptWindow(string stickName, bool requireUsername, string? prefilledUsername) : this()
