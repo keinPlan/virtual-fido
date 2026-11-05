@@ -14,7 +14,7 @@ public sealed class TpmBackupTests : IDisposable
     {
         var configs = new StickConfigStore(Path.Combine(_root, "source"));
         var config = configs.Create("TPM", "serial", new TpmSecretManagerConfig { Username = "alice", MasterName = "master" });
-        var files = new[] { "salt.bin", "verifier.bin", "keys/master.json", "keys/credential.tpmkey", "keys/attestation.json", "credentials/account.bin", "state/pin.bin" };
+        var files = new[] { "salt.bin", "verifier.bin", "keys/master.json", "keys/credential.tpmkey", "keys/attestation.json", "credentials/account.bin", "pin.bin" };
         foreach (var file in files)
         {
             var path = Path.Combine(configs.GetStickDirectory(config.Name), file);

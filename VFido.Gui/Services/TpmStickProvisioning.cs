@@ -97,7 +97,7 @@ public static class TpmStickProvisioning
             throw new InvalidDataException("Metadata authentication files are missing. Restore the complete stick folder before connecting.");
         // Check the metadata password before allocating TPM resources.
         var credentials = new TpmBasedCredentialStore(configs.GetCredentialStoreDirectory(config.Name), username, password, authDirectory);
-        var pin = new FileBasedSecretStore(Path.Combine(authDirectory, "state"), username, password, authDirectory: authDirectory);
+        var pin = new FileBasedSecretStore(authDirectory, username, password, authDirectory: authDirectory);
         var keys = new TpmBasedSecretStore(configs.GetKeyStoreDirectory(config.Name), masterPassword: password);
         try
         {
