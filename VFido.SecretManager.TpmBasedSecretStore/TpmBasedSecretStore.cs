@@ -29,6 +29,31 @@ public sealed class TpmBasedSecretStore : IKeyStore, ICredentialKeyImporter, IDi
     public byte[] MasterName => _masterName.ToArray();
     public byte[] Aaguid => ModelId.ToByteArray(bigEndian: true);
 
+    /// <summary>Evict this store's verified shared primary cache. Does not delete credential files.</summary>
+    public static void DeleteCachedPrimary(string directory, Func<Tpm2Device>? deviceFactory = null,
+        byte[]? ownerAuthorization = null)
+    {
+        var local = Read<LocalMaster>(Path.Combine(directory, MasterFile));
+        if (local.Version is not (1 or 2) || local.PrimaryName == null)
+            throw new InvalidDataException("Unsupported local master format.");
+        using var tpm = Connect(deviceFactory);
+        var handle = new TpmHandle(PrimaryCacheHandle);
+        var pub = tpm.ReadPublic(handle, out _, out _);
+        if (!pub.GetName().AsSpan().SequenceEqual(local.PrimaryName))
+            throw new CryptographicException("The cached primary does not match this store. It was not deleted.");
+        var owner = new TpmHandle(TpmRh.Owner) { Auth = ownerAuthorization ?? Array.Empty<byte>() };
+        try
+        {
+            tpm.EvictControl(owner, handle, handle);
+            Logger.Info("Deleted shared TPM primary cache at 0x{0:X8}.", PrimaryCacheHandle);
+        }
+        catch (TpmException)
+        {
+            Logger.Warn("Deleting TPM primary cache failed (TPM response: {0}).", tpm._GetLastResponseCode());
+            throw;
+        }
+    }
+
     /// <summary>Import the recovery master once on this TPM. Does not overwrite existing provisioning.</summary>
     public static void Provision(string directory, TpmMasterKey master,
         Func<Tpm2Device>? deviceFactory = null, byte[]? ownerAuthorization = null, string? masterPassword = null)

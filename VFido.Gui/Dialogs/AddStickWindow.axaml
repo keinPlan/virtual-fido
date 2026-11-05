@@ -97,6 +97,7 @@
                     <TextBlock Text="Used only for provisioning or recovery. Keep this PFX and password, plus a backup of the stick folder and its metadata password, to recover your credentials." Foreground="Gray" FontSize="11" TextWrapping="Wrap"/>
                 </StackPanel>
                 <Button x:Name="TpmRestoreButton" Content="Restore master on this TPM" IsVisible="False" Click="RestoreTpmMaster_Click"/>
+                <Button x:Name="TpmDeletePrimaryButton" Content="Delete cached TPM primary (0x81015646)..." IsVisible="False" Click="DeleteTpmPrimary_Click"/>
             </StackPanel>
 
             <TextBlock x:Name="ProgressText" Text="Working..." TextWrapping="Wrap" IsVisible="False"/>

@@ -9,6 +9,48 @@ namespace VirtualFido.Tests;
 
 public sealed class TpmPrimaryCacheTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void DeleteCache_OnlyEvictsMatchingPrimaryAndPreservesFiles(bool matches)
+    {
+        using var master = TpmMasterKey.Generate();
+        var pub = Marshaller.FromTpmRepresentation<TpmPublic>(master.PublicArea);
+        var name = pub.GetName();
+        if (!matches) name[^1] ^= 1;
+        WithStore(pub, name, device =>
+        {
+            device.AllowEviction = true;
+            var path = Path.Combine(device.Directory, "master.json");
+            var original = File.ReadAllBytes(path);
+            if (matches)
+            {
+                TpmBasedSecretStore.DeleteCachedPrimary(device.Directory, () => device);
+                Assert.Equal(new uint[] { 0x81015646, 0x81015646 }, device.EvictionHandles);
+            }
+            else
+            {
+                Assert.Throws<CryptographicException>(() => TpmBasedSecretStore.DeleteCachedPrimary(device.Directory, () => device));
+                Assert.DoesNotContain(TpmCc.EvictControl, device.Commands);
+            }
+            Assert.Equal(original, File.ReadAllBytes(path));
+            Assert.DoesNotContain(TpmCc.CreatePrimary, device.Commands);
+            Assert.Empty(device.Flushed);
+        });
+    }
+
+    [Fact]
+    public void DeleteCache_ReportsTpmFailure()
+    {
+        using var master = TpmMasterKey.Generate();
+        var pub = Marshaller.FromTpmRepresentation<TpmPublic>(master.PublicArea);
+        WithStore(pub, pub.GetName(), device =>
+        {
+            Assert.Throws<TpmException>(() => TpmBasedSecretStore.DeleteCachedPrimary(device.Directory, () => device));
+            Assert.Contains(TpmCc.EvictControl, device.Commands);
+        });
+    }
+
     [Fact]
     public void ProtectedMaster_SuppliesDerivedAuthorizationToTpmCommands()
     {
@@ -114,6 +156,8 @@ public sealed class TpmPrimaryCacheTests
         public bool FailLoad { get; set; }
         public uint PublicHandle { get; set; } = 0x81015646;
         public byte[]? MasterAuthorization { get; private set; }
+        public bool AllowEviction { get; set; }
+        public uint[]? EvictionHandles { get; private set; }
         public override void Connect() { NeedsHMAC = false; }
         public override void Close() { }
 
@@ -143,6 +187,17 @@ public sealed class TpmPrimaryCacheTests
                 WriteSized(body, cached.GetName());
                 body.Write(new byte[5]); // Empty response nonce, attributes, and HMAC.
             }
+            else if (code == TpmCc.EvictControl && AllowEviction)
+            {
+                var authSize = BinaryPrimitives.ReadUInt32BigEndian(command.AsSpan(18));
+                EvictionHandles = new[]
+                {
+                    BinaryPrimitives.ReadUInt32BigEndian(command.AsSpan(14)),
+                    BinaryPrimitives.ReadUInt32BigEndian(command.AsSpan(22 + (int)authSize))
+                };
+                Write32(body, 0); // No response parameters.
+                body.Write(new byte[5]);
+            }
             else if (code == TpmCc.FlushContext)
             {
                 Flushed.Add(BinaryPrimitives.ReadUInt32BigEndian(command.AsSpan(10)));
@@ -153,7 +208,7 @@ public sealed class TpmPrimaryCacheTests
                 return;
             }
             using var packet = new MemoryStream();
-            packet.Write(code == TpmCc.Load ? new byte[] { 0x80, 0x02 } : new byte[] { 0x80, 0x01 });
+            packet.Write(code is TpmCc.Load or TpmCc.EvictControl ? new byte[] { 0x80, 0x02 } : new byte[] { 0x80, 0x01 });
             Write32(packet, (uint)(10 + body.Length));
             Write32(packet, 0);
             body.WriteTo(packet);

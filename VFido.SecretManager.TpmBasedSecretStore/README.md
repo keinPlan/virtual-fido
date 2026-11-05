@@ -1,12 +1,14 @@
 # TPM secret store
 
-This backend imports an externally generated RSA storage master and generates new P-256 credential keys inside the TPM using TPM2_Create. Existing P-256 credential keys can also be imported. Newly generated credentials never expose plaintext private key material to the application during creation; wrapped recovery remains supported through the portable master. After import, credential and attestation signing runs through TPM2_Sign; runtime never loads a software credential private key. Windows TBS is the default transport. No TPM clear, hierarchy changes, eviction of existing persistent objects, or software fallback is performed.
+This backend imports an externally generated RSA storage master and generates new P-256 credential keys inside the TPM using TPM2_Create. Existing P-256 credential keys can also be imported. Newly generated credentials never expose plaintext private key material to the application during creation; wrapped recovery remains supported through the portable master. After import, credential and attestation signing runs through TPM2_Sign; runtime never loads a software credential private key. Windows TBS is the default transport. No TPM clear, hierarchy changes, or software fallback is performed. Persistent primary eviction is available only through the explicit cache-deletion action.
 
 ## Connection performance
 
 RSA primary creation can take tens of seconds on some TPMs. The backend creates its own deterministic owner primary and attempts to keep a persistent copy at `0x81015646` using `TPM2_EvictControl`. Subsequent connections verify that object's TPM Name against `master.json` and reuse it without `TPM2_CreatePrimary`. The application does not use the Windows SRK. Existing stores using the application primary can populate the cache without migrating key files.
 
 Caching requires available TPM NV space, owner hierarchy authorization, and permission from Windows TBS to execute `TPM2_EvictControl`. If caching fails, the store logs the TPM response and continues with a transient primary; future connections can remain slow. An occupied handle is never replaced, and the persistent primary is never evicted on disconnect.
+
+In **Edit**, **Delete cached TPM primary (0x81015646)...** removes the shared cache after confirmation. Disconnect all TPM sticks first. The backend verifies the object Name against this store before calling `TPM2_EvictControl`; it refuses to delete a different occupant. This requires Windows command permission and owner authorization just like persistence. Credential files remain intact, and the next connection can recreate the same deterministic primary and cache it again. Cache deletion does not revoke credentials or backups.
 
 ### Windows reports TbsCommandBlocked
 

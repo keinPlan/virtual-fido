@@ -69,6 +69,7 @@ public partial class AddStickWindow : Window
         window.TpmCreateMasterButton.IsVisible = false;
         window.TpmRestoreButton.IsVisible = existing.SecretManager is TpmSecretManagerConfig;
         window.TpmRestoreButton.IsEnabled = !stickManager.IsConnected(existing.Name);
+        window.TpmDeletePrimaryButton.IsVisible = existing.SecretManager is TpmSecretManagerConfig;
         window.TpmProvisionHint.Text = stickManager.IsConnected(existing.Name)
             ? "Disconnect this stick before restoring its master."
             : "After moving this stick folder to another computer or resetting the TPM, select its original recovery PFX to restore access. Existing credentials are checked before the local master is replaced.";
@@ -389,6 +390,33 @@ public partial class AddStickWindow : Window
             TpmProvisionHint.Text = "Master restored. Connect using your original metadata username and password.";
         }
         catch (Exception ex) { ShowError($"TPM recovery failed: {ex.Message}"); }
+        finally { SetTpmBusy(false); }
+    }
+
+    private async void DeleteTpmPrimary_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_busy || _existing == null) return;
+        if (_stickManager!.GetConfiguredSticks().Any(stick =>
+            stick.SecretManager is TpmSecretManagerConfig && _stickManager.IsConnected(stick.Name)))
+        {
+            ShowError("Disconnect all TPM sticks before deleting the shared primary cache.");
+            return;
+        }
+        var confirmed = await ConfirmWindow.ShowAsync(this, "Delete cached TPM primary",
+            "Delete the shared TPM primary at 0x81015646? Credential files remain intact. " +
+            "Other VFido TPM stores share this cache. The next connection can recreate the same primary " +
+            "and may be slow. This does not revoke existing credentials or backups.");
+        if (!confirmed) return;
+        SetTpmBusy(true, "Deleting cached TPM primary...");
+        try
+        {
+            await Task.Run(() => TpmBasedSecretStore.DeleteCachedPrimary(_configStore!.GetKeyStoreDirectory(_existing.Name)));
+            TpmProvisionHint.Text = "Cached primary deleted. The next connection will recreate it and may be slow.";
+        }
+        catch (Exception ex)
+        {
+            ShowError($"Could not delete cached TPM primary: {ex.Message}. Windows may require administrator rights and TPM owner authorization.");
+        }
         finally { SetTpmBusy(false); }
     }
 
