@@ -13,6 +13,7 @@ public partial class MainWindow : Window
 {
     private readonly IStickManager _stickManager;
     private readonly IStickConfigStore _configStore;
+    private readonly Dictionary<string, string> _pendingOperations = new();
 
     private bool _allowClose;
 
@@ -80,6 +81,7 @@ public partial class MainWindow : Window
     private Control BuildStickCard(StickConfig stick)
     {
         var connected = _stickManager.IsConnected(stick.Name);
+        var busy = _pendingOperations.TryGetValue(stick.Name, out var operation);
 
         var statusDot = new Avalonia.Controls.Shapes.Ellipse
         {
@@ -98,18 +100,35 @@ public partial class MainWindow : Window
         infoPanel.Children.Add(namePanel);
         infoPanel.Children.Add(new TextBlock
         {
-            Text = $"{stick.SerialNumberIdentifier}  ·  {stick.SecretManager.GetType().Name.Replace("SecretManagerConfig", string.Empty)}  ·  {(connected ? "Connected" : "Disconnected")}",
+            Text = $"{stick.SerialNumberIdentifier}  ·  {stick.SecretManager.GetType().Name.Replace("SecretManagerConfig", string.Empty)}  ·  {(busy ? operation : connected ? "Connected" : "Disconnected")}",
             Foreground = Brushes.Gray,
             FontSize = 12,
         });
 
-        var editButton = new Button { Content = "Edit", Margin = new Avalonia.Thickness(0, 0, 8, 0) };
+        if (busy)
+        {
+            infoPanel.Children.Add(new ProgressBar
+            {
+                IsIndeterminate = true,
+                Height = 4,
+                Margin = new Avalonia.Thickness(0, 6, 12, 0),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+            });
+            infoPanel.Children.Add(new TextBlock
+            {
+                Text = "Please wait. This can take a while.",
+                Foreground = Brushes.Gray,
+                FontSize = 12,
+            });
+        }
+
+        var editButton = new Button { Content = "Edit", Margin = new Avalonia.Thickness(0, 0, 8, 0), IsEnabled = !busy };
         editButton.Click += async (_, _) => await EditStickAsync(stick);
 
-        var credentialsButton = new Button { Content = "Credentials", Margin = new Avalonia.Thickness(0, 0, 8, 0), IsEnabled = connected };
+        var credentialsButton = new Button { Content = "Credentials", Margin = new Avalonia.Thickness(0, 0, 8, 0), IsEnabled = connected && !busy };
         credentialsButton.Click += async (_, _) => await CredentialsWindow.ShowAsync(this, _stickManager, stick);
 
-        var connectButton = new Button { Content = connected ? "Disconnect" : "Connect", Width = 100 };
+        var connectButton = new Button { Content = busy ? operation : connected ? "Disconnect" : "Connect", MinWidth = 100, IsEnabled = !busy };
         connectButton.Click += async (_, _) => await ToggleConnectAsync(stick, connected);
 
         var buttonsPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -149,12 +168,26 @@ public partial class MainWindow : Window
 
     private async Task ToggleConnectAsync(StickConfig stick, bool wasConnected)
     {
-        var result = wasConnected
-            ? await _stickManager.DisconnectAsync(stick.Name)
-            : await _stickManager.ConnectAsync(stick.Name);
+        if (!_pendingOperations.TryAdd(stick.Name, wasConnected ? "Disconnecting..." : "Connecting...")) return;
+        RefreshStickList();
+        StickAttachResult result;
+        try
+        {
+            result = wasConnected
+                ? await _stickManager.DisconnectAsync(stick.Name)
+                : await _stickManager.ConnectAsync(stick.Name);
+        }
+        catch (Exception ex)
+        {
+            result = new StickAttachResult(StickAttachOutcome.Failed, string.Empty, ex.Message);
+        }
+        finally
+        {
+            _pendingOperations.Remove(stick.Name);
+            RefreshStickList();
+        }
 
         await ReportAttachResultAsync(result);
-        RefreshStickList();
     }
 
     private async Task ReportAttachResultAsync(StickAttachResult result)
