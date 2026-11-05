@@ -43,12 +43,14 @@ public partial class CredentialsWindow : Window
         _selections.Clear();
         var supportsExport = _stickManager!.SupportsPasskeyBackup(_stick!.Name);
         var supportsImport = _stickManager.SupportsPasskeyImport(_stick.Name);
-        ExportButton.IsEnabled = supportsExport;
+        var tpmBackup = _stick.SecretManager is TpmSecretManagerConfig;
+        ExportButton.IsEnabled = supportsExport || tpmBackup;
+        ExportButton.Content = tpmBackup ? "Export TPM backup ZIP" : "Export selected";
         ImportButton.IsEnabled = supportsImport;
         TransferHint.Text = supportsExport
             ? "CXP response with HPKE base encryption: export with a P-256 CER; import with its private PFX. All counters are preserved."
             : supportsImport
-                ? "Passkey import is available. TPM private keys cannot be exported. To recover this stick, keep its master recovery PFX, stick folder, and metadata password."
+                ? "Export all TPM-wrapped keys and encrypted state as a ZIP without an additional password. master.json is excluded; restoring requires the original recovery PFX and metadata password. Passkey import uses CXP."
                 : "This backend does not support passkey backup or import.";
         IReadOnlyList<CredentialInfo> credentials;
         try
@@ -89,7 +91,7 @@ public partial class CredentialsWindow : Window
         var deleteButton = new Button { Content = "Delete" };
         deleteButton.Click += async (_, _) => await DeleteCredentialAsync(credential);
 
-        var selection = new CheckBox { IsChecked = true, IsVisible = ExportButton.IsEnabled, VerticalAlignment = VerticalAlignment.Center };
+        var selection = new CheckBox { IsChecked = true, IsVisible = ExportButton.IsEnabled && _stick!.SecretManager is not TpmSecretManagerConfig, VerticalAlignment = VerticalAlignment.Center };
         _selections.Add((credential.CredentialId, selection));
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
         Grid.SetColumn(selection, 0);
@@ -183,6 +185,16 @@ public partial class CredentialsWindow : Window
 
     private async Task ExportPasskeysAsync()
     {
+        if (_stick!.SecretManager is TpmSecretManagerConfig)
+        {
+            var tpmDestination = await SaveFileAsync("Save TPM stick backup", _stick.Name + ".zip", "zip");
+            if (tpmDestination == null) return;
+            var tpmBackup = await _stickManager!.ExportTpmBackupAsync(_stick.Name);
+            await WriteFileAsync(tpmDestination, tpmBackup);
+            await MessageWindow.ShowAsync(this, "Export complete",
+                "Exported all TPM-wrapped keys and encrypted state without an additional password. master.json is excluded. Restore instructions are included; keep your original recovery PFX and metadata password separately.");
+            return;
+        }
         var ids = _selections.Where(s => s.Selection.IsChecked == true).Select(s => s.Id).ToList();
         if (ids.Count == 0) throw new InvalidOperationException("Select at least one passkey to export.");
         var file = await OpenFileAsync("Select recipient public certificate", "cer", "crt");

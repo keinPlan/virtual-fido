@@ -137,6 +137,16 @@ public sealed class StickManager : IStickManager
     public bool SupportsPasskeyBackup(string stickName) =>
         RequireConnected(stickName).SecretManager is IPasskeyBackupManager { SupportsPasskeyBackup: true };
 
+    public Task<byte[]> ExportTpmBackupAsync(string stickName)
+    {
+        var config = _configStore.LoadAll().First(c => c.Name == stickName);
+        if (config.SecretManager is not TpmSecretManagerConfig)
+            throw new NotSupportedException("Expected a TPM stick.");
+        var manager = RequireConnected(stickName).SecretManager as Fido2SecretManager
+            ?? throw new NotSupportedException("Expected a local secret manager.");
+        return Task.Run(() => manager.CreateStorageSnapshot(() => TpmStickProvisioning.ExportBackup(_configStore, config)));
+    }
+
     public bool SupportsPasskeyImport(string stickName) =>
         RequireConnected(stickName).SecretManager is IPasskeyBackupManager { SupportsPasskeyImport: true };
 

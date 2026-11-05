@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.IO.Compression;
 using VFido.Gui.Configuration;
 using VFido.SecretManager;
 using VFido.SecretManager.FileBasedSecretStore;
@@ -9,6 +10,53 @@ namespace VFido.Gui.Services;
 /// <summary>GUI-independent provisioning, recovery, and ownership of local TPM stores.</summary>
 public static class TpmStickProvisioning
 {
+    /// <summary>Copies wrapped keys and encrypted state, excluding the TPM-local master. Caller must pause writes.</summary>
+    public static byte[] ExportBackup(IStickConfigStore configs, StickConfig config)
+    {
+        if (config.SecretManager is not TpmSecretManagerConfig)
+            throw new ArgumentException("Expected TPM configuration.", nameof(config));
+        if (!StickConfigStore.IsValidStickName(config.Name))
+            throw new ArgumentException("Invalid stick name.", nameof(config));
+        var directory = configs.GetStickDirectory(config.Name);
+        foreach (var required in new[] { "config.json", "salt.bin", "verifier.bin" })
+            if (!File.Exists(Path.Combine(directory, required)))
+                throw new InvalidDataException($"Cannot export an incomplete stick: {required} is missing.");
+
+        using var output = new MemoryStream();
+        using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            AddDirectory(directory);
+            var instructions = archive.CreateEntry("RESTORE.txt");
+            using var writer = new StreamWriter(instructions.Open());
+            writer.Write($"""
+                VFido TPM stick backup: {config.Name}
+
+                Extract the {config.Name} folder into your configured VFido directory while the stick is disconnected.
+                Keep the folder name and all files together. Avoid overwriting a newer stick: counters and PIN retry state reflect the time of this backup.
+                Connect using the original metadata username and password. This ZIP has no additional password; stored keys remain TPM-wrapped and metadata remains encrypted.
+
+                master.json is deliberately excluded. Before connecting, use Edit > Restore master on this TPM with the original recovery PFX, its password, and the original metadata password, even on the original TPM.
+                The recovery PFX is stored separately and is not included by this export.
+                """);
+
+            void AddDirectory(string path)
+            {
+                if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+                    throw new IOException("TPM backup cannot include symbolic links or junctions.");
+                foreach (var file in Directory.EnumerateFileSystemEntries(path))
+                {
+                    if (string.Equals(Path.GetFileName(file), "master.json", StringComparison.OrdinalIgnoreCase)) continue;
+                    var attributes = File.GetAttributes(file);
+                    if ((attributes & FileAttributes.ReparsePoint) != 0)
+                        throw new IOException("TPM backup cannot include symbolic links or junctions.");
+                    if ((attributes & FileAttributes.Directory) != 0) AddDirectory(file);
+                    else archive.CreateEntryFromFile(file, config.Name + "/" + Path.GetRelativePath(directory, file).Replace('\\', '/'));
+                }
+            }
+        }
+        return output.ToArray();
+    }
+
     public static StickConfig Create(IStickConfigStore configs, string name, string serial,
         string username, string metadataPassword, string pfxPath, string pfxPassword)
     {

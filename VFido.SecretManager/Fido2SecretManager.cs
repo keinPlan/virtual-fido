@@ -20,6 +20,13 @@ namespace VFido.SecretManager
         private readonly bool _ownsKeyStore;
         private bool _disposed;
 
+        /// <summary>Captures local storage while credential, counter, and PIN writes are paused.</summary>
+        public byte[] CreateStorageSnapshot(Func<byte[]> capture)
+        {
+            ArgumentNullException.ThrowIfNull(capture);
+            lock (_sync) { ThrowIfDisposed(); return capture(); }
+        }
+
         public Fido2SecretManager(IKeyStore keys, ICredentialStore credentials, IPinStateStore? pinState = null, bool ownsKeyStore = false)
         {
             _keys = keys;

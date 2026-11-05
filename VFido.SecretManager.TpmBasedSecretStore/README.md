@@ -32,6 +32,8 @@ This authorization protects use of the locally wrapped master. It does not revok
 
 ## Recovery PFX
 
+In **Credentials**, use the normal **Export TPM backup ZIP** button to export all wrapped keys, attestation, encrypted metadata, authentication files, configuration, PIN state, and restore instructions. Export pauses storage writes for a consistent snapshot while the stick stays connected. The ZIP has no additional password. The TPM-local `master.json` is excluded. Extract the stick folder into the configured VFido directory while disconnected, then use **Edit > Restore master on this TPM** with the original recovery PFX, its password, and the original metadata password before connecting, even on the original TPM. Keep that PFX separately. Restoring an older backup also restores its counters and PIN retry state. **Import passkeys** continues to accept certificate-encrypted CXP files.
+
 ```csharp
 using VFido.SecretManager.TpmBasedSecretStore;
 
