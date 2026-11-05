@@ -14,10 +14,22 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer
 
         public int TokenLifetimeMinutes { get; set; } = 30;
 
+        /// <summary>Client certificate SHA-1 thumbprints allowed to view /admin. Empty disables dashboard access.</summary>
+        public string[] AdminCertificateThumbprints { get; set; } = [];
+
         /// <summary>Root CA/intermediate CA/master protection cert state, managed by the admin CLI. Defaults next to the server executable.</summary>
         public string PkiRootPath { get; set; } = Path.Combine(AppContext.BaseDirectory, "pki");
 
         /// <summary>Per-user FIDO secrets: <c>&lt;SecretsRootPath&gt;\&lt;username&gt;\{keys,credentials,certs}</c>. Defaults next to the server executable.</summary>
         public string SecretsRootPath { get; set; } = Path.Combine(AppContext.BaseDirectory, "VFido");
+
+        /// <summary>Resolve configured relative paths against the executable directory for both CLI and server startup.</summary>
+        public void ResolvePaths(string baseDirectory)
+        {
+            ServerCertificatePath = Path.GetFullPath(ServerCertificatePath, baseDirectory);
+            ClientCaCertificatePath = Path.GetFullPath(ClientCaCertificatePath, baseDirectory);
+            PkiRootPath = Path.GetFullPath(PkiRootPath, baseDirectory);
+            SecretsRootPath = Path.GetFullPath(SecretsRootPath, baseDirectory);
+        }
     }
 }

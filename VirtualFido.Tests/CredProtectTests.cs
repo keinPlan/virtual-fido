@@ -173,6 +173,27 @@ namespace VirtualFido.Tests
             Assert.Equal(VFido.Core.Device.Ctap2.Ctap2Constants.Ctap2ErrPinRequired, ex.StatusCode);
         }
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task GetAssertion_PinVerificationDoesNotImplyUserPresence(bool requirePresence)
+        {
+            var manager = new Fido2SecretManager(new MemoryBasedSecretStore(), new InMemoryCredentialStore());
+            var credential = await manager.CreateCredentialAsync("example.com", [1], "user", "User", true, 1);
+            var authenticator = await Fido2Authenticator.CreateAsync(manager, new byte[16]);
+            await SetPinAsync(authenticator, "1234");
+            var token = await GetPinTokenAsync(authenticator, "1234");
+            var hash = new byte[32];
+
+            var result = await authenticator.GetAssertionAsync(new GetAssertionRequest(
+                "example.com", hash, [credential.CredentialId],
+                PinUvAuthParam: PinProtocolOne.Authenticate(token, hash),
+                RequireUserVerification: true, RequireUserPresence: requirePresence));
+
+            Assert.Equal(0x04, result.AuthenticatorData[32] & 0x04);
+            Assert.Equal(requirePresence ? 1 : 0, result.AuthenticatorData[32] & 1);
+        }
+
         private static byte[] ExtractCredentialId(byte[] authenticatorData)
         {
             var offset = 32 + 1 + 4 + 16;

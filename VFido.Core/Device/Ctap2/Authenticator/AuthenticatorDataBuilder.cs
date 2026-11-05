@@ -31,11 +31,11 @@ namespace VFido.Core.Device.Ctap2.Authenticator
             return ms.ToArray();
         }
 
-        internal static byte[] BuildWithoutAttestedCredential(string rpId, uint signCount, bool userVerified = false)
+        internal static byte[] BuildWithoutAttestedCredential(string rpId, uint signCount, bool userVerified = false, bool userPresent = true)
         {
             using var ms = new MemoryStream();
             ms.Write(ComputeRpIdHash(rpId));
-            ms.WriteByte((byte)(FlagUserPresent | (userVerified ? FlagUserVerified : 0)));
+            ms.WriteByte((byte)((userPresent ? FlagUserPresent : 0) | (userVerified ? FlagUserVerified : 0)));
             WriteUInt32BigEndian(ms, signCount);
             return ms.ToArray();
         }

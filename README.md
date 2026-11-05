@@ -89,6 +89,8 @@ dotnet run --project VFido.SecretManager.MtlsBasedSecretStoreServer -- revoke-us
 dotnet run --project VFido.SecretManager.MtlsBasedSecretStoreServer
 ```
 
+Server logging uses NLog via the existing `ILogger` calls. `nlog.config` is copied alongside the executable on build/publish and controls console output plus JSON lines in `logs/server.log` relative to the executable directory. Files rotate daily or at 10 MiB, keeping up to 30 archives. User, certificate thumbprint, connection and request context are included in logged events; credential IDs use hashed fingerprints. `Logging:LogLevel` in `appsettings.json` still controls category thresholds. Connection, login and passkey signing events are logged; a signed assertion does not confirm acceptance by the relying website.
+
 ## Project layout
 
 ```
@@ -127,3 +129,37 @@ This is a **request-free certificate profile**, not a complete standard CXP cere
 In **Add stick**, choose **TPM 2.0 (Windows)**. Select a master recovery PFX or create a new one, then set a separate username and metadata password. Connect uses the metadata password; the PFX password is needed only during setup or recovery. PIN state and retry counts persist across reconnects.
 
 To recover a copied stick folder on another TPM, disconnect it and use **Edit > Restore master on this TPM** with the original PFX. Keep the PFX, its password, the complete stick folder, and the metadata password. See [TPM setup and recovery](VFido.SecretManager.TpmBasedSecretStore/README.md) for details.
+
+### Server management dashboard
+
+The mTLS secret store server serves a read-only management dashboard at
+`https://localhost:5443/admin` (use your configured hostname and port).
+It shows uptime, server certificate expiry, provisioned users, encrypted credential
+file counts, and unexpired password-session counts. User inventory can be searched
+and refreshes every 30 seconds. The dashboard does not decrypt stored credentials
+or expose passwords, private keys, or bearer tokens.
+
+To enable access:
+
+1. Provision an administrator client certificate with the existing `create-user`
+   command and import its `client.pfx` into your browser's personal certificate store.
+2. Obtain that certificate's thumbprint from the certificate viewer. Add it to
+   `MtlsBasedSecretStoreServer.AdminCertificateThumbprints` in the server's
+   `appsettings.json`, for example:
+
+   ```json
+   "AdminCertificateThumbprints": ["YOUR_ADMIN_CLIENT_CERTIFICATE_THUMBPRINT"]
+   ```
+
+3. Restart the server, trust your server's CA on the browser machine, and open
+   `/admin`. Select the administrator client certificate when the browser prompts.
+
+The allowlist is empty by default, denying dashboard access. Ordinary client
+certificates do not grant administrator access. Allowlisted certificates must still
+pass the server's existing mTLS validation. All dashboard assets and inventory
+endpoints require administrator access and send `Cache-Control: no-store`.
+
+User provisioning and certificate revocation use the existing `create-user` and
+`revoke-user` CLI commands. Restart the server after revocation. A user directory's
+PFX presence is not proof of certificate validity; session counts cover password
+login tokens, not open connections or certificate-only users.

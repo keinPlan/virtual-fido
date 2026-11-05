@@ -12,6 +12,11 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer
 
         public SessionTokenService(TimeSpan lifetime) => _lifetime = lifetime;
 
+        public IReadOnlyDictionary<string, int> GetActiveSessionCounts() => _sessions.Values
+            .Where(session => session.ExpiresAt > DateTimeOffset.UtcNow)
+            .GroupBy(session => session.Username, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+
         public LoginResponse IssueToken(string username)
         {
             var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));

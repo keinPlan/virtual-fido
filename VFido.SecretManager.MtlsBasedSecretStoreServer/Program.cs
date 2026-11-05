@@ -2,7 +2,9 @@ using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
 using System.Linq;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
+using NLog.Extensions.Logging;
 using VFido.SecretManager;
 using VFido.SecretManager.MtlsBasedSecretStoreServer;
 using VFido.SecretManager.MtlsBasedSecretStoreServer.Cli;
@@ -16,20 +18,34 @@ var configuration = new ConfigurationBuilder()
 var serverOptions = configuration.GetSection("MtlsBasedSecretStoreServer").Get<MtlsBasedSecretStoreServerOptions>()
     ?? throw new InvalidOperationException("Missing \"MtlsBasedSecretStoreServer\" configuration section.");
 
+serverOptions.ResolvePaths(AppContext.BaseDirectory);
+
 if (args.Length > 0)
     return AdminCommands.Run(args, serverOptions);
 
-var serverCertificate = new X509Certificate2(serverOptions.ServerCertificatePath, serverOptions.ServerCertificatePassword);
-var clientCaCertificate = new X509Certificate2(serverOptions.ClientCaCertificatePath);
+var serverCertificate = LoadCertificate(serverOptions.ServerCertificatePath, serverOptions.ServerCertificatePassword);
+var clientCaCertificate = LoadCertificate(serverOptions.ClientCaCertificatePath);
 var revocations = RevocationStore.Load(serverOptions.PkiRootPath);
 var masterProtectionCertificate = new CaManager(serverOptions.PkiRootPath).LoadMasterProtectionCertificate();
 
+using var nlogFactory = new NLog.LogFactory();
+nlogFactory.Configuration = new NLog.Config.XmlLoggingConfiguration(Path.Combine(AppContext.BaseDirectory, "nlog.config"), nlogFactory);
+var nlogOptions = new NLogProviderOptions
+{
+    CaptureMessageProperties = true,
+    IncludeScopes = true,
+    RemoveLoggerFactoryFilter = false,
+    ShutdownOnDispose = false // Both ILogger factories share the NLog factory, disposed last.
+};
 using var bootstrapLoggerFactory = LoggerFactory.Create(logging => logging
     .AddConfiguration(configuration.GetSection("Logging"))
-    .AddConsole());
+    .AddNLog(nlogOptions, _ => nlogFactory));
 var mtlsLogger = bootstrapLoggerFactory.CreateLogger("MtlsClientCertificateValidation");
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Logging.ClearProviders();
+builder.Logging.AddConfiguration(configuration.GetSection("Logging"));
+builder.Logging.AddNLog(nlogOptions, _ => nlogFactory);
 
 builder.WebHost.ConfigureKestrel(kestrel =>
 {
@@ -41,6 +57,27 @@ builder.WebHost.ConfigureKestrel(kestrel =>
             https.ClientCertificateMode = ClientCertificateMode.RequireCertificate;
             https.ClientCertificateValidation = (certificate, chain, errors) =>
                 ValidateClientCertificate(certificate, clientCaCertificate, revocations, mtlsLogger);
+        });
+        listen.Use(next => async connection =>
+        {
+            var certificate = connection.Features.Get<ITlsConnectionFeature>()?.ClientCertificate;
+            using var scope = mtlsLogger.BeginScope(new Dictionary<string, object?>
+            {
+                ["Username"] = certificate?.GetNameInfo(X509NameType.SimpleName, false),
+                ["CertificateThumbprint"] = certificate?.Thumbprint,
+                ["ConnectionId"] = connection.ConnectionId,
+                ["RemoteEndPoint"] = connection.RemoteEndPoint?.ToString()
+            });
+            mtlsLogger.LogInformation("Client connected: user {Username}, certificate {CertificateThumbprint}, remote {RemoteEndPoint}, connection {ConnectionId}.",
+                certificate?.GetNameInfo(X509NameType.SimpleName, false), certificate?.Thumbprint, connection.RemoteEndPoint, connection.ConnectionId);
+            try
+            {
+                await next(connection);
+            }
+            finally
+            {
+                mtlsLogger.LogInformation("Client disconnected: connection {ConnectionId}.", connection.ConnectionId);
+            }
         });
     });
 });
@@ -55,7 +92,23 @@ builder.Services.AddSingleton<UserSessionCache>();
 builder.Services.AddSingleton<UserKeyProtector>();
 builder.Services.AddSingleton<UserDirectoryResolver>();
 
-var app = builder.Build();
+await using var app = builder.Build();
+
+app.Use(async (http, next) =>
+{
+    var certificate = http.Connection.ClientCertificate;
+    using var scope = app.Logger.BeginScope(new Dictionary<string, object?>
+    {
+        ["Username"] = certificate?.GetNameInfo(X509NameType.SimpleName, false),
+        ["CertificateThumbprint"] = certificate?.Thumbprint,
+        ["RemoteAddress"] = http.Connection.RemoteIpAddress?.ToString(),
+        ["ConnectionId"] = http.Connection.Id,
+        ["RequestId"] = http.TraceIdentifier
+    });
+    await next(http);
+});
+
+app.MapManagementDashboard(serverOptions, serverCertificate);
 
 app.MapPost(SecretManagerRoutes.Login, (LoginRequest request, HttpContext http, SessionTokenService sessions, UserSessionCache cache, UserDirectoryResolver users, ILogger<Program> logger) =>
 {
@@ -91,8 +144,13 @@ app.MapPost(SecretManagerRoutes.Login, (LoginRequest request, HttpContext http, 
 
 var api = app.MapGroup("").AddEndpointFilter<IdentityResolutionFilter>();
 
-api.MapPost(SecretManagerRoutes.CreateCredential, async (CreateCredentialRequest request, HttpContext http) =>
-    Results.Ok(await Manager(http).CreateCredentialAsync(request.RpId, request.UserId, request.UserName, request.UserDisplayName, request.IsResident, request.CredProtect)));
+api.MapPost(SecretManagerRoutes.CreateCredential, async (CreateCredentialRequest request, HttpContext http, ILogger<Program> logger) =>
+{
+    var credential = await Manager(http).CreateCredentialAsync(request.RpId, request.UserId, request.UserName, request.UserDisplayName, request.IsResident, request.CredProtect);
+    logger.LogInformation("Passkey created for {Username}: RP {RpId}, account {AccountName}, credential {CredentialFingerprint}.",
+        http.Connection.ClientCertificate?.GetNameInfo(X509NameType.SimpleName, false), request.RpId, request.UserName, CredentialFingerprint(credential.CredentialId));
+    return Results.Ok(credential);
+});
 
 api.MapPost(SecretManagerRoutes.CredentialExists, async (CredentialExistsRequest request, HttpContext http) =>
     Results.Ok(new CredentialExistsResponse(await Manager(http).CredentialExistsAsync(request.CredentialId, request.RpId))));
@@ -121,8 +179,25 @@ api.MapPost(SecretManagerRoutes.DeleteCredential, async (DeleteCredentialRequest
 api.MapPost(SecretManagerRoutes.IncrementSignCount, async (IncrementSignCountRequest request, HttpContext http) =>
     Results.Ok(new IncrementSignCountResponse(await Manager(http).IncrementSignCountAsync(request.CredentialId))));
 
-api.MapPost(SecretManagerRoutes.Sign, async (SignRequest request, HttpContext http) =>
-    Results.Ok(new SignResponse(await Manager(http).SignAsync(request.CredentialId, request.Data))));
+api.MapPost(SecretManagerRoutes.Sign, async (SignRequest request, HttpContext http, ILogger<Program> logger) =>
+{
+    var username = http.Connection.ClientCertificate?.GetNameInfo(X509NameType.SimpleName, false);
+    var fingerprint = CredentialFingerprint(request.CredentialId);
+    try
+    {
+        var signature = await Manager(http).SignAsync(request.CredentialId, request.Data);
+        var metadata = AssertionLogMetadata.FromSigningData(request.Data);
+        logger.LogInformation("Passkey {AssertionKind} signed for {Username}: credential {CredentialFingerprint}, client flags UP={UserPresent}, UV={UserVerified}, sign count {SignCount}.",
+            metadata.AssertionKind, username, fingerprint, metadata.UserPresent, metadata.UserVerified, metadata.SignCount);
+        return Results.Ok(new SignResponse(signature));
+    }
+    catch (Exception exception)
+    {
+        // Log only the exception type: provider messages may contain sensitive data.
+        logger.LogWarning("Passkey signing failed for {Username}: credential {CredentialFingerprint}, error {ErrorType}.", username, fingerprint, exception.GetType().Name);
+        throw;
+    }
+});
 
 api.MapPost(SecretManagerRoutes.GetAttestationCertificate, async (HttpContext http) =>
 {
@@ -156,6 +231,17 @@ return 0;
 
 static IFido2SecretManager Manager(HttpContext http) =>
     (IFido2SecretManager)http.Items[IdentityResolutionFilter.ManagerItemKey]!;
+
+static string CredentialFingerprint(byte[] credentialId) =>
+    Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(credentialId))[..16];
+
+static X509Certificate2 LoadCertificate(string path, string? password = null)
+{
+    if (!File.Exists(path))
+        throw new FileNotFoundException(
+            $"Certificate file not found: '{path}'. Check appsettings.json. For a new installation, run the server's 'init' command first.", path);
+    return new X509Certificate2(path, password);
+}
 
 static bool ValidateClientCertificate(X509Certificate2 certificate, X509Certificate2 ca, RevocationStore revocations, ILogger logger)
 {

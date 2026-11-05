@@ -27,6 +27,7 @@ namespace VFido.Core.Device.Ctap2.Authenticator
         private string? _pendingRpId;
         private byte[]? _pendingClientDataHash;
         private bool _pendingUserVerified;
+        private bool _pendingUserPresent;
 
         private Fido2Authenticator(IFido2SecretManager secrets, byte[] aaguid, PinManager pin, IUserPresenceGate? presence)
         {
@@ -92,6 +93,7 @@ namespace VFido.Core.Device.Ctap2.Authenticator
 
         public async Task<GetAssertionResult> GetAssertionAsync(GetAssertionRequest request)
         {
+            _pendingAssertions = null;
             CredentialInfo? credential = null;
             var foundViaAllowList = false;
             foreach (var credentialId in request.AllowList)
@@ -105,7 +107,6 @@ namespace VFido.Core.Device.Ctap2.Authenticator
                 }
             }
 
-            _pendingAssertions = null;
             int? numberOfCredentials = null;
 
             // Empty allowList: fall back to discoverable (resident) credentials for the RP so
@@ -134,6 +135,10 @@ namespace VFido.Core.Device.Ctap2.Authenticator
             };
             var userVerified = RequireUserVerification(request.RequireUserVerification, request.PinUvAuthParam, request.ClientDataHash, forceUv);
 
+            // A silent probe skips approval and must leave the UP flag clear.
+            if (request.RequireUserPresence && !_presence.RequestApproval("Sign in", request.RpId))
+                throw new Ctap2Exception(Ctap2Constants.Ctap2ErrOperationDenied);
+
             if (resident is { Count: > 1 })
             {
                 _pendingAssertions = resident;
@@ -141,20 +146,15 @@ namespace VFido.Core.Device.Ctap2.Authenticator
                 _pendingRpId = request.RpId;
                 _pendingClientDataHash = request.ClientDataHash;
                 _pendingUserVerified = userVerified;
+                _pendingUserPresent = request.RequireUserPresence;
                 numberOfCredentials = resident.Count;
             }
-
-            // up=false is a silent credential probe (e.g. WebAuthn conditional mediation/autofill
-            // discovery): the platform just wants to know whether a matching credential exists, and
-            // must not see any prompt for it. Only gate on user presence for a real (up=true) request.
-            if (request.RequireUserPresence && !_presence.RequestApproval("Sign in", request.RpId))
-                throw new Ctap2Exception(Ctap2Constants.Ctap2ErrOperationDenied);
 
             // numberOfCredentials is only reported in this first response (per CTAP2 6.2), but
             // whether to disclose name/displayName must stay true for every subsequent
             // authenticatorGetNextAssertion call too, since the platform still needs to
             // distinguish between the multiple discoverable accounts it's enumerating.
-            return await BuildAssertionResult(credential, request.RpId, request.ClientDataHash, userVerified, numberOfCredentials, includeUserDetails: numberOfCredentials > 1);
+            return await BuildAssertionResult(credential, request.RpId, request.ClientDataHash, userVerified, request.RequireUserPresence, numberOfCredentials, includeUserDetails: numberOfCredentials > 1);
         }
 
         public async Task<GetAssertionResult> GetNextAssertionAsync()
@@ -163,7 +163,7 @@ namespace VFido.Core.Device.Ctap2.Authenticator
                 throw new Ctap2Exception(Ctap2Constants.Ctap2ErrNotAllowed);
 
             var credential = _pendingAssertions[_pendingAssertionIndex++];
-            var result = await BuildAssertionResult(credential, _pendingRpId!, _pendingClientDataHash!, _pendingUserVerified, null, includeUserDetails: true);
+            var result = await BuildAssertionResult(credential, _pendingRpId!, _pendingClientDataHash!, _pendingUserVerified, _pendingUserPresent, null, includeUserDetails: true);
 
             if (_pendingAssertionIndex >= _pendingAssertions.Count)
                 _pendingAssertions = null;
@@ -171,10 +171,10 @@ namespace VFido.Core.Device.Ctap2.Authenticator
             return result;
         }
 
-        private async Task<GetAssertionResult> BuildAssertionResult(CredentialInfo credential, string rpId, byte[] clientDataHash, bool userVerified, int? numberOfCredentials, bool includeUserDetails)
+        private async Task<GetAssertionResult> BuildAssertionResult(CredentialInfo credential, string rpId, byte[] clientDataHash, bool userVerified, bool userPresent, int? numberOfCredentials, bool includeUserDetails)
         {
             var signCount = await _secrets.IncrementSignCountAsync(credential.CredentialId);
-            var authenticatorData = AuthenticatorDataBuilder.BuildWithoutAttestedCredential(rpId, signCount, userVerified);
+            var authenticatorData = AuthenticatorDataBuilder.BuildWithoutAttestedCredential(rpId, signCount, userVerified, userPresent);
 
             var signature = await _secrets.SignAsync(credential.CredentialId, Combine(authenticatorData, clientDataHash));
 
