@@ -16,12 +16,18 @@ var configuration = new ConfigurationBuilder()
     .Build();
 
 var serverOptions = configuration.GetSection("MtlsBasedSecretStoreServer").Get<MtlsBasedSecretStoreServerOptions>()
-    ?? throw new InvalidOperationException("Missing \"MtlsBasedSecretStoreServer\" configuration section.");
+    ?? new MtlsBasedSecretStoreServerOptions();
 
 serverOptions.ResolvePaths(AppContext.BaseDirectory);
 
 if (args.Length > 0)
     return AdminCommands.Run(args, serverOptions);
+
+if (FirstRunSetup.IsFreshInstallation(serverOptions))
+{
+    if (!await FirstRunSetup.RunAsync(serverOptions, Path.Combine(AppContext.BaseDirectory, "appsettings.json")))
+        return 0;
+}
 
 var serverCertificate = LoadCertificate(serverOptions.ServerCertificatePath, serverOptions.ServerCertificatePassword);
 var clientCaCertificate = LoadCertificate(serverOptions.ClientCaCertificatePath);

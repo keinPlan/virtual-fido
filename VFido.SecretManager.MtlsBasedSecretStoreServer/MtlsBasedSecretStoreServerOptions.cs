@@ -9,11 +9,11 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer
         public ServerStorageProvider StorageProvider { get; set; } = ServerStorageProvider.File;
 
         /// <summary>PFX containing this server's TLS certificate + private key (presented to clients). Produced by the "init" admin command.</summary>
-        public required string ServerCertificatePath { get; set; }
+        public string ServerCertificatePath { get; set; } = "certs/server.pfx";
         public string? ServerCertificatePassword { get; set; }
 
         /// <summary>CA certificate (public only) that every client's leaf certificate must chain to. Produced by the "init" admin command.</summary>
-        public required string ClientCaCertificatePath { get; set; }
+        public string ClientCaCertificatePath { get; set; } = "certs/ca.crt";
 
         public int TokenLifetimeMinutes { get; set; } = 30;
 

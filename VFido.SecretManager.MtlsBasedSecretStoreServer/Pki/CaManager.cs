@@ -65,10 +65,13 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer.Pki
         {
             using var intermediate = LoadIntermediate(passphrase);
             using var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            var names = new SubjectAlternativeNameBuilder();
+            if (System.Net.IPAddress.TryParse(subjectName, out var address)) names.AddIpAddress(address);
+            else names.AddDnsName(subjectName);
             using var leaf = IssueLeaf($"CN={subjectName}", leafKey, intermediate,
-                new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment, critical: true));
+                new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment, critical: true), names.Build());
             using var leafWithKey = leaf.CopyWithPrivateKey(leafKey);
-            return leafWithKey.Export(X509ContentType.Pfx, pfxPassword);
+            return ExportWithIntermediate(leafWithKey, intermediate, pfxPassword);
         }
 
         /// <summary>Issues a client mTLS leaf certificate with <c>CN=&lt;username&gt;</c> (the identity the server binds a login/session to), exported as a password-protected PFX.</summary>
@@ -79,7 +82,14 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer.Pki
             using var leaf = IssueLeaf($"CN={username}", leafKey, intermediate,
                 new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, critical: true));
             using var leafWithKey = leaf.CopyWithPrivateKey(leafKey);
-            return leafWithKey.Export(X509ContentType.Pfx, pfxPassword);
+            return ExportWithIntermediate(leafWithKey, intermediate, pfxPassword);
+        }
+
+        private static byte[] ExportWithIntermediate(X509Certificate2 leaf, X509Certificate2 intermediate, string? password)
+        {
+            // Include only the intermediate's public certificate, never its CA private key.
+            using var publicIntermediate = new X509Certificate2(intermediate.Export(X509ContentType.Cert));
+            return new X509Certificate2Collection { leaf, publicIntermediate }.Export(X509ContentType.Pfx, password)!;
         }
 
         /// <summary>
@@ -169,11 +179,13 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer.Pki
             return issued.Export(X509ContentType.Cert);
         }
 
-        private static X509Certificate2 IssueLeaf(string subjectName, ECDsa leafKey, X509Certificate2 intermediateWithKey, X509KeyUsageExtension keyUsage)
+        private static X509Certificate2 IssueLeaf(string subjectName, ECDsa leafKey, X509Certificate2 intermediateWithKey, X509KeyUsageExtension keyUsage,
+            X509Extension? subjectAlternativeNames = null)
         {
             var request = new CertificateRequest(subjectName, leafKey, HashAlgorithmName.SHA256);
             request.CertificateExtensions.Add(new X509BasicConstraintsExtension(certificateAuthority: false, hasPathLengthConstraint: false, pathLengthConstraint: 0, critical: true));
             request.CertificateExtensions.Add(keyUsage);
+            if (subjectAlternativeNames is not null) request.CertificateExtensions.Add(subjectAlternativeNames);
             request.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(request.PublicKey, critical: false));
 
             var notBefore = DateTimeOffset.UtcNow.AddDays(-1);

@@ -17,6 +17,7 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer
         private readonly string _secretsRoot;
         private readonly UserKeyProtector _keyProtector;
         private readonly ServerStorageProvider _provider;
+        private bool _disposed;
         private readonly object _sync = new();
         private readonly Dictionary<string, IFido2SecretManager> _managers = new(StringComparer.Ordinal);
 
@@ -80,6 +81,7 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer
             // Password verification above must run on every login, including cache hits.
             lock (_sync)
             {
+                ObjectDisposedException.ThrowIf(_disposed, this);
                 if (_managers.TryGetValue(username, out var existing)) return existing;
                 IFido2SecretManager manager;
                 if (_provider == ServerStorageProvider.Memory)
@@ -90,7 +92,6 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer
                 else if (_provider == ServerStorageProvider.Tpm)
                 {
                     var directory = Path.Combine(GetUserDirectory(username), "tpm", "keys");
-                    // Separate protected authorization for unattended TPM access, also for password users.
                     var authorization = Convert.ToBase64String(_keyProtector.GetOrCreateKey(GetUserDirectory(username)));
                     if (!File.Exists(Path.Combine(directory, "master.json")))
                     {
@@ -111,6 +112,8 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer
         {
             lock (_sync)
             {
+                if (_disposed) return;
+                _disposed = true;
                 foreach (var manager in _managers.Values)
                     (manager as IDisposable)?.Dispose();
                 _managers.Clear();
