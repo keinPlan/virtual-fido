@@ -23,6 +23,7 @@ public sealed class TpmBasedSecretStore : IKeyStore, ICredentialKeyImporter, IDi
     private readonly TpmHandle _master;
     private readonly byte[] _masterName;
     private readonly TpmPublic _masterPublic;
+    private readonly byte[] _masterAuthorization;
     private bool _disposed;
     private static readonly Guid ModelId = new("d7e3ebc2-38a2-4589-b903-ae19686c5dc8");
     public byte[] MasterName => _masterName.ToArray();
@@ -30,48 +31,60 @@ public sealed class TpmBasedSecretStore : IKeyStore, ICredentialKeyImporter, IDi
 
     /// <summary>Import the recovery master once on this TPM. Does not overwrite existing provisioning.</summary>
     public static void Provision(string directory, TpmMasterKey master,
-        Func<Tpm2Device>? deviceFactory = null, byte[]? ownerAuthorization = null)
+        Func<Tpm2Device>? deviceFactory = null, byte[]? ownerAuthorization = null, string? masterPassword = null)
     {
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, MasterFile);
         if (File.Exists(path)) throw new IOException("This directory already contains a local master. Use a new destination for recovery.");
-        var timer = Stopwatch.StartNew();
-        Logger.Info("Provisioning TPM-wrapped master.");
-        using var tpm = Connect(deviceFactory);
-        var primary = CreatePrimary(tpm, ownerAuthorization, out var primaryPublic);
+        var authorization = Array.Empty<byte>();
+        var protection = masterPassword == null ? null : TpmMasterProtection.Create(masterPassword, out authorization);
         try
         {
-            TryCachePrimary(tpm, primary, primaryPublic.GetName(), ownerAuthorization);
-            var source = master.ToImportObject();
+            var timer = Stopwatch.StartNew();
+            Logger.Info("Provisioning TPM-wrapped master.");
+            using var tpm = Connect(deviceFactory);
+            var primary = CreatePrimary(tpm, ownerAuthorization, out var primaryPublic);
             try
             {
-                var duplicate = TpmImportWrapping.Wrap(source, primaryPublic, out var secret);
+                TryCachePrimary(tpm, primary, primaryPublic.GetName(), ownerAuthorization);
+                var source = master.ToImportObject(authorization);
                 try
                 {
-                    var imported = tpm.Import(primary, Array.Empty<byte>(), source.Public, duplicate, secret, new SymDefObject());
-                    var loaded = tpm.Load(primary, imported, source.Public);
-                    tpm.FlushContext(loaded);
-                    WriteNew(path, new LocalMaster(1, primaryPublic.GetName(), source.Public.GetTpmRepresentation(), imported.buffer));
-                    Logger.Info("TPM master provisioned in {0} ms.", timer.ElapsedMilliseconds);
+                    var duplicate = TpmImportWrapping.Wrap(source, primaryPublic, out var secret);
+                    try
+                    {
+                        var imported = tpm.Import(primary, Array.Empty<byte>(), source.Public, duplicate, secret, new SymDefObject());
+                        var loaded = tpm.Load(primary, imported, source.Public);
+                        tpm.FlushContext(loaded);
+                        WriteNew(path, new LocalMaster(protection == null ? 1 : 2, primaryPublic.GetName(), source.Public.GetTpmRepresentation(), imported.buffer, protection));
+                        Logger.Info("TPM master provisioned in {0} ms.", timer.ElapsedMilliseconds);
+                    }
+                    finally { CryptographicOperations.ZeroMemory(secret); }
                 }
-                finally { CryptographicOperations.ZeroMemory(secret); }
+                finally { ClearSensitive(source.Sensitive); }
             }
-            finally { ClearSensitive(source.Sensitive); }
+            finally { tpm.FlushContext(primary); }
         }
-        finally { tpm.FlushContext(primary); }
+        finally { CryptographicOperations.ZeroMemory(authorization); }
     }
 
     /// <summary>Open using the local TPM-wrapped master; the recovery PFX is not required.</summary>
-    public TpmBasedSecretStore(string directory, Func<Tpm2Device>? deviceFactory = null, byte[]? ownerAuthorization = null)
+    public TpmBasedSecretStore(string directory, Func<Tpm2Device>? deviceFactory = null, byte[]? ownerAuthorization = null,
+        string? masterPassword = null)
     {
         var timer = Stopwatch.StartNew();
         Logger.Info("Opening TPM secret store.");
         _directory = directory;
         var local = Read<LocalMaster>(Path.Combine(directory, MasterFile));
-        if (local.Version != 1) throw new InvalidDataException("Unsupported local master format.");
+        if (local.Version is not (1 or 2) || (local.Version == 2) != (local.Protection != null))
+            throw new InvalidDataException("Unsupported or incomplete local master format.");
         _masterPublic = Marshaller.FromTpmRepresentation<TpmPublic>(local.Public);
         _masterName = _masterPublic.GetName();
-        _tpm = Connect(deviceFactory);
+        _masterAuthorization = local.Protection?.Unlock(masterPassword) ?? Array.Empty<byte>();
+        if (local.Version == 1)
+            Logger.Warn("This legacy TPM master has no object password protection. Restore with a master password to enable it.");
+        try { _tpm = Connect(deviceFactory); }
+        catch { CryptographicOperations.ZeroMemory(_masterAuthorization); throw; }
         TpmHandle? primary = null;
         try
         {
@@ -88,12 +101,14 @@ public sealed class TpmBasedSecretStore : IKeyStore, ICredentialKeyImporter, IDi
             var loadTimer = Stopwatch.StartNew();
             Logger.Debug("Loading TPM-wrapped master.");
             _master = _tpm.Load(primary, new TpmPrivate(local.Private), _masterPublic);
+            _master.Auth = _masterAuthorization;
             Logger.Debug("TPM master loaded in {0} ms.", loadTimer.ElapsedMilliseconds);
             _primary = primary;
             Logger.Info("TPM secret store opened in {0} ms (cached primary: {1}).", timer.ElapsedMilliseconds, !_primaryIsTransient);
         }
         catch
         {
+            CryptographicOperations.ZeroMemory(_masterAuthorization);
             Logger.Error("Opening TPM secret store failed after {0} ms (TPM response: {1}).", timer.ElapsedMilliseconds, _tpm._GetLastResponseCode());
             try { if (primary != null && _primaryIsTransient) _tpm.FlushContext(primary); }
             finally { _tpm.Dispose(); }
@@ -406,10 +421,16 @@ public sealed class TpmBasedSecretStore : IKeyStore, ICredentialKeyImporter, IDi
             if (_disposed) return;
             _disposed = true;
             try { _tpm.FlushContext(_master); }
-            finally { try { if (_primaryIsTransient) _tpm.FlushContext(_primary); } finally { _tpm.Dispose(); } }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(_master.Auth);
+                CryptographicOperations.ZeroMemory(_masterAuthorization);
+                try { if (_primaryIsTransient) _tpm.FlushContext(_primary); } finally { _tpm.Dispose(); }
+            }
         }
     }
-    private sealed record LocalMaster(int Version, byte[] PrimaryName, byte[] Public, byte[] Private);
+    private sealed record LocalMaster(int Version, byte[] PrimaryName, byte[] Public, byte[] Private,
+        TpmMasterProtection? Protection = null);
     private sealed record WrappedKey(int Version, byte[] MasterName, byte[] Public, byte[] Private);
 }
 

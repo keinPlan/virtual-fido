@@ -54,6 +54,24 @@ public sealed class TpmGuiProvisioningTests : IClassFixture<TpmMasterFixture>, I
         Assert.Throws<InvalidDataException>(() => TpmStickProvisioning.Open(configs, config, "alice", "password"));
         Assert.False(File.Exists(Path.Combine(configs.GetStickDirectory("TPM"), "salt.bin")));
     }
+    [Fact]
+    public void RecoveryWithWrongMetadataPassword_PreservesMasterBeforeTpmAccess()
+    {
+        var configs = new StickConfigStore(Path.Combine(_root, "sticks"));
+        var config = configs.Create("TPM", "serial", new TpmSecretManagerConfig
+        { Username = "alice", MasterName = Convert.ToHexString(_fixture.Master.Name) });
+        _ = new TpmBasedCredentialStore(configs.GetCredentialStoreDirectory(config.Name), "alice",
+            "metadata password", configs.GetStickDirectory(config.Name));
+        var keys = configs.GetKeyStoreDirectory(config.Name);
+        Directory.CreateDirectory(keys);
+        var path = Path.Combine(keys, "master.json");
+        File.WriteAllText(path, "existing master");
+        Assert.Throws<VFido.SecretManager.FileBasedSecretStore.InvalidCredentialsException>(() =>
+            TpmStickProvisioning.Restore(configs, config, WriteRecovery(), TpmMasterFixture.Password, "wrong password"));
+        Assert.Equal("existing master", File.ReadAllText(path));
+        Assert.Empty(Directory.GetDirectories(keys, ".restore-*"));
+    }
+
     [TpmIntegrationFact]
     public async Task SetupReconnectAndRecovery_PreserveCredentialsAndLockedPin()
     {
@@ -76,6 +94,8 @@ public sealed class TpmGuiProvisioningTests : IClassFixture<TpmMasterFixture>, I
         }
         Assert.Throws<VFido.SecretManager.FileBasedSecretStore.InvalidCredentialsException>(() => TpmStickProvisioning.Open(configs, config, "alice", "wrong metadata password"));
         var masterPath = Path.Combine(configs.GetKeyStoreDirectory(config.Name), "master.json");
+        using (var local = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(masterPath)))
+            Assert.Equal(2, local.RootElement.GetProperty("Version").GetInt32());
         var originalMaster = File.ReadAllBytes(masterPath);
         var credentialsBefore = Directory.GetFiles(configs.GetKeyStoreDirectory(config.Name), "*.tpmkey")
             .ToDictionary(path => Path.GetFileName(path)!, File.ReadAllBytes);
@@ -83,16 +103,16 @@ public sealed class TpmGuiProvisioningTests : IClassFixture<TpmMasterFixture>, I
         modifiedSeed[0] ^= 1;
         using (var wrong = TpmMasterKey.FromExternal(_fixture.Rsa, modifiedSeed))
             File.WriteAllBytes(Path.Combine(_root, "wrong-seed.pfx"), wrong.ExportPfx(TpmMasterFixture.Password));
-        Assert.Throws<Tpm2Lib.TpmException>(() => TpmStickProvisioning.Restore(configs, config, Path.Combine(_root, "wrong-seed.pfx"), TpmMasterFixture.Password));
+        Assert.Throws<Tpm2Lib.TpmException>(() => TpmStickProvisioning.Restore(configs, config, Path.Combine(_root, "wrong-seed.pfx"), TpmMasterFixture.Password, "metadata password"));
         Assert.Equal(originalMaster, File.ReadAllBytes(masterPath));
         Assert.Empty(Directory.GetDirectories(configs.GetKeyStoreDirectory(config.Name), ".restore-*"));
         using (var different = TpmMasterKey.Generate())
             File.WriteAllBytes(Path.Combine(_root, "different.pfx"), different.ExportPfx(TpmMasterFixture.Password));
-        Assert.Throws<CryptographicException>(() => TpmStickProvisioning.Restore(configs, config, Path.Combine(_root, "different.pfx"), TpmMasterFixture.Password));
+        Assert.Throws<CryptographicException>(() => TpmStickProvisioning.Restore(configs, config, Path.Combine(_root, "different.pfx"), TpmMasterFixture.Password, "metadata password"));
         Assert.Equal(originalMaster, File.ReadAllBytes(masterPath));
         // An unreadable or foreign local master can be replaced without touching credential files.
         File.WriteAllText(masterPath, "broken local master");
-        TpmStickProvisioning.Restore(configs, config, pfx, TpmMasterFixture.Password);
+        TpmStickProvisioning.Restore(configs, config, pfx, TpmMasterFixture.Password, "metadata password");
         foreach (var (filename, bytes) in credentialsBefore)
             Assert.Equal(bytes, File.ReadAllBytes(Path.Combine(configs.GetKeyStoreDirectory(config.Name), filename!)));
         using (var reopened = TpmStickProvisioning.Open(configs, config, "alice", "metadata password"))

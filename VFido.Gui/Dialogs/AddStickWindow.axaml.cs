@@ -60,7 +60,12 @@ public partial class AddStickWindow : Window
         window.FilePanel.IsVisible = false;
         window.MtlsPanel.IsVisible = false;
         window.TpmPanel.IsVisible = existing.SecretManager is TpmSecretManagerConfig;
-        window.TpmMetadataPanel.IsVisible = false;
+        window.TpmMetadataPanel.IsVisible = existing.SecretManager is TpmSecretManagerConfig;
+        if (existing.SecretManager is TpmSecretManagerConfig tpmSettings)
+        {
+            window.TpmUsernameBox.Text = tpmSettings.Username;
+            window.TpmUsernameBox.IsReadOnly = true;
+        }
         window.TpmCreateMasterButton.IsVisible = false;
         window.TpmRestoreButton.IsVisible = existing.SecretManager is TpmSecretManagerConfig;
         window.TpmRestoreButton.IsEnabled = !stickManager.IsConnected(existing.Name);
@@ -368,13 +373,19 @@ public partial class AddStickWindow : Window
             ShowError("Select this stick's original recovery PFX and enter its password.");
             return;
         }
+        if (string.IsNullOrWhiteSpace(TpmMetadataPasswordBox.Text))
+        {
+            ShowError("Enter your original metadata password to protect the restored master.");
+            return;
+        }
         var path = TpmPfxPathBox.Text;
         var password = TpmPfxPasswordBox.Text;
+        var metadataPassword = TpmMetadataPasswordBox.Text;
         SetTpmBusy(true, "Restoring master and checking existing credentials...");
         try
         {
-            await Task.Run(() => TpmStickProvisioning.Restore(_configStore!, _existing, path, password));
-            TpmPfxPasswordBox.Text = string.Empty;
+            await Task.Run(() => TpmStickProvisioning.Restore(_configStore!, _existing, path, password, metadataPassword));
+            ClearTpmPasswords();
             TpmProvisionHint.Text = "Master restored. Connect using your original metadata username and password.";
         }
         catch (Exception ex) { ShowError($"TPM recovery failed: {ex.Message}"); }

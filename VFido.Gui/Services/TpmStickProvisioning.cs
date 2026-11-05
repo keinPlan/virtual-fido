@@ -20,7 +20,7 @@ public static class TpmStickProvisioning
         { Username = username, MasterName = Convert.ToHexString(master.Name) });
         try
         {
-            TpmBasedSecretStore.Provision(configs.GetKeyStoreDirectory(name), master);
+            TpmBasedSecretStore.Provision(configs.GetKeyStoreDirectory(name), master, masterPassword: metadataPassword);
             using var manager = OpenCore(configs, config, username, metadataPassword, initializeMetadata: true);
             // Verify this TPM can import and sign P-256 before publishing a usable stick.
             var probe = manager.CreateCredentialAsync("vfido-provisioning.invalid", Array.Empty<byte>(), "probe", "probe", false, 1).GetAwaiter().GetResult();
@@ -50,7 +50,7 @@ public static class TpmStickProvisioning
         // Check the metadata password before allocating TPM resources.
         var credentials = new TpmBasedCredentialStore(configs.GetCredentialStoreDirectory(config.Name), username, password, authDirectory);
         var pin = new FileBasedSecretStore(Path.Combine(authDirectory, "state"), username, password, authDirectory: authDirectory);
-        var keys = new TpmBasedSecretStore(configs.GetKeyStoreDirectory(config.Name));
+        var keys = new TpmBasedSecretStore(configs.GetKeyStoreDirectory(config.Name), masterPassword: password);
         try
         {
             if (!string.Equals(Convert.ToHexString(keys.MasterName), settings.MasterName, StringComparison.OrdinalIgnoreCase))
@@ -61,20 +61,27 @@ public static class TpmStickProvisioning
     }
 
     /// <summary>Stage and validate every existing child before atomically replacing the local master.</summary>
-    public static void Restore(IStickConfigStore configs, StickConfig config, string pfxPath, string password)
+    public static void Restore(IStickConfigStore configs, StickConfig config, string pfxPath, string password,
+        string metadataPassword)
     {
         EnsureWindows();
         var settings = config.SecretManager as TpmSecretManagerConfig ?? throw new ArgumentException("Expected TPM configuration.");
         using var master = ReadMaster(pfxPath, password);
         if (!string.Equals(Convert.ToHexString(master.Name), settings.MasterName, StringComparison.OrdinalIgnoreCase))
             throw new CryptographicException("This recovery PFX belongs to a different master.");
+        var authDirectory = configs.GetStickDirectory(config.Name);
+        if (!File.Exists(Path.Combine(authDirectory, "salt.bin")) || !File.Exists(Path.Combine(authDirectory, "verifier.bin")))
+            throw new InvalidDataException("Metadata authentication files are missing. Restore the complete stick folder first.");
+        // Validate the original password before wrapping a replacement master with it.
+        _ = new TpmBasedCredentialStore(configs.GetCredentialStoreDirectory(config.Name), settings.Username,
+            metadataPassword, authDirectory);
         var keys = Path.GetFullPath(configs.GetKeyStoreDirectory(config.Name));
         Directory.CreateDirectory(keys);
         var staging = Path.Combine(keys, ".restore-" + Guid.NewGuid().ToString("N"));
         try
         {
-            TpmBasedSecretStore.Provision(staging, master);
-            using (var candidate = new TpmBasedSecretStore(staging))
+            TpmBasedSecretStore.Provision(staging, master, masterPassword: metadataPassword);
+            using (var candidate = new TpmBasedSecretStore(staging, masterPassword: metadataPassword))
                 foreach (var file in Directory.EnumerateFiles(keys, "*.tpmkey"))
                 {
                     if (new FileInfo(file).Length > 16384) throw new InvalidDataException("A wrapped credential is too large.");

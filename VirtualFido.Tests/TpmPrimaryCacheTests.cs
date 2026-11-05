@@ -1,5 +1,7 @@
 using System.Buffers.Binary;
+using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Tpm2Lib;
 using VFido.SecretManager.TpmBasedSecretStore;
 
@@ -7,6 +9,36 @@ namespace VirtualFido.Tests;
 
 public sealed class TpmPrimaryCacheTests
 {
+    [Fact]
+    public void ProtectedMaster_SuppliesDerivedAuthorizationToTpmCommands()
+    {
+        using var master = TpmMasterKey.Generate();
+        var pub = Marshaller.FromTpmRepresentation<TpmPublic>(master.PublicArea);
+        var protection = TpmMasterProtection.Create("store password", out var expected);
+        try
+        {
+            WithStore(pub, pub.GetName(), device =>
+            {
+                var path = Path.Combine(device.Directory, "master.json");
+                var local = JsonNode.Parse(File.ReadAllBytes(path))!;
+                local["Version"] = 2;
+                local["Protection"] = JsonSerializer.SerializeToNode(protection);
+                File.WriteAllText(path, local.ToJsonString());
+                using var store = new TpmBasedSecretStore(device.Directory, () => device, masterPassword: "store password");
+                using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+                var pkcs8 = key.ExportPkcs8PrivateKey();
+                try
+                {
+                    // The fake rejects Import after capturing its password session authorization.
+                    Assert.Throws<TpmException>(() => store.ImportPkcs8(pkcs8));
+                    Assert.Equal(expected, device.MasterAuthorization);
+                }
+                finally { CryptographicOperations.ZeroMemory(pkcs8); }
+            });
+        }
+        finally { CryptographicOperations.ZeroMemory(expected); }
+    }
+
     [Fact]
     public void Reconnect_UsesMatchingPersistentPrimaryWithoutCreatingOrFlushingIt()
     {
@@ -81,6 +113,7 @@ public sealed class TpmPrimaryCacheTests
         public List<uint> ReadPublicHandles { get; } = new();
         public bool FailLoad { get; set; }
         public uint PublicHandle { get; set; } = 0x81015646;
+        public byte[]? MasterAuthorization { get; private set; }
         public override void Connect() { NeedsHMAC = false; }
         public override void Close() { }
 
@@ -90,6 +123,11 @@ public sealed class TpmPrimaryCacheTests
             Commands.Add(code);
             if (code == TpmCc.ReadPublic)
                 ReadPublicHandles.Add(BinaryPrimitives.ReadUInt32BigEndian(command.AsSpan(10)));
+            if (code == TpmCc.Import)
+            {
+                var size = BinaryPrimitives.ReadUInt16BigEndian(command.AsSpan(25));
+                MasterAuthorization = command.AsSpan(27, size).ToArray();
+            }
             using var body = new MemoryStream();
             if (code == TpmCc.ReadPublic && cached != null &&
                 BinaryPrimitives.ReadUInt32BigEndian(command.AsSpan(10)) == PublicHandle)

@@ -153,11 +153,11 @@ public sealed class TpmMasterKey : IDisposable
         }
     }
 
-    internal TssObject ToImportObject()
+    internal TssObject ToImportObject(byte[]? authorization = null)
     {
         ThrowIfDisposed();
         var p = _rsa.ExportParameters(true);
-        try { return new TssObject(Public, new Sensitive(Array.Empty<byte>(), _seed.ToArray(), new Tpm2bPrivateKeyRsa(p.P!)), null!); }
+        try { return new TssObject(Public, new Sensitive(authorization?.ToArray() ?? Array.Empty<byte>(), _seed.ToArray(), new Tpm2bPrivateKeyRsa(p.P!)), null!); }
         finally
         {
             // P is owned by the returned sensitive structure and cleared by the importer.

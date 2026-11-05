@@ -80,7 +80,7 @@
                     <StackPanel Spacing="4">
                         <TextBlock Text="Metadata password"/>
                         <TextBox x:Name="TpmMetadataPasswordBox" PasswordChar="*"/>
-                        <TextBlock Text="Encrypts account details and PIN state. Enter it again when connecting. It is separate from the recovery PFX password and is never saved." Foreground="Gray" FontSize="11" TextWrapping="Wrap"/>
+                        <TextBlock Text="Encrypts account details and PIN state, and authorizes the TPM master. Enter it again when connecting or restoring. It is separate from the recovery PFX password and is never saved." Foreground="Gray" FontSize="11" TextWrapping="Wrap"/>
                     </StackPanel>
                 </StackPanel>
                 <StackPanel Spacing="4">
