@@ -41,7 +41,7 @@ The PFX alone does not contain credentials or their metadata. Conversely, anyone
 
 ## Integration and tests
 
-`TpmBasedSecretStore` implements `IKeyStore`, `ICredentialKeyImporter`, and `IDisposable`. It supports existing encrypted passkey backup **import**, but never PKCS#8 export. `Fido2SecretManager.SupportsPasskeyImport` is independent from `SupportsPasskeyBackup`. Wrapped blob recovery is a separate API. Dispose the key store after callers finish; signing wrappers own no TPM handles. Operations are serialized per store and transient credential handles are flushed after use.
+`TpmBasedSecretStore` implements `IKeyStore`, `ICredentialKeyImporter`, and `IDisposable`. It supports certificate-encrypted CXF **import**, including VirtualFido counter metadata, but never PKCS#8 export. `Fido2SecretManager.SupportsPasskeyImport` is independent from `SupportsPasskeyBackup`. Wrapped blob recovery is a separate API. Dispose the key store after callers finish; signing wrappers own no TPM handles. Operations are serialized per store and transient credential handles are flushed after use.
 
 The GUI supports TPM setup under **Add stick > TPM 2.0 (Windows)**. Choose an existing recovery PFX or use **Create recovery PFX...** to save a new master (existing files are never overwritten). Enter a separate metadata username/password; the PFX password is used only for setup or recovery and is not copied into the stick folder or configuration. **Connect** prompts for the metadata username/password. Credential management enables **Import passkeys** while private-key export stays disabled. The GUI persists PIN hashes and retry counts in password-encrypted `state/pin.bin`, sharing metadata authentication files, so locked PINs stay locked across reconnects.
 

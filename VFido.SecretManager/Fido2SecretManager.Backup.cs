@@ -24,7 +24,7 @@ public sealed partial class Fido2SecretManager
                 {
                     if (!ids.Add(Convert.ToHexString(id))) throw new InvalidOperationException("Duplicate export selection.");
                     var credential = RequireCredential(id);
-                    var entry = new BackupCredential(ToInfo(credential), transfer.ExportPkcs8(credential.KeyHandle));
+                    var entry = new BackupCredential(ToInfo(credential), transfer.ExportPkcs8(credential.KeyHandle), credential.DisableSignCount);
                     entries.Add(entry);
                     entry.Validate();
                 }
@@ -70,7 +70,7 @@ public sealed partial class Fido2SecretManager
                     _credentials.Save(new StoredCredential
                     {
                         CredentialId = info.CredentialId, RpId = info.RpId, UserId = info.UserId,
-                        KeyHandle = handle, SignCount = info.SignCount, IsResident = info.IsResident,
+                        KeyHandle = handle, SignCount = info.SignCount, DisableSignCount = entry.DisableSignCount, IsResident = info.IsResident,
                         UserName = info.UserName, UserDisplayName = info.UserDisplayName, CredProtect = info.CredProtect,
                     });
                 }

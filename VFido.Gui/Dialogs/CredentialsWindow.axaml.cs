@@ -45,7 +45,7 @@ public partial class CredentialsWindow : Window
         ExportButton.IsEnabled = supportsExport;
         ImportButton.IsEnabled = supportsImport;
         TransferHint.Text = supportsExport
-            ? "Encrypted VirtualFido backup: export with a public CER; restore with its private PFX. Keep the PFX and password safe."
+            ? "CXP response with HPKE base encryption: export with a P-256 CER; import with its private PFX. All counters are preserved."
             : supportsImport
                 ? "Passkey import is available. TPM private keys cannot be exported. To recover this stick, keep its master recovery PFX, stick folder, and metadata password."
                 : "This backend does not support passkey backup or import.";
@@ -190,7 +190,7 @@ public partial class CredentialsWindow : Window
         PasskeyBackup.ValidateRecipient(certificate);
         if (!await ConfirmWindow.ShowAsync(this, "Export passkeys",
             $"Encrypt {ids.Count} selected passkey(s) for this certificate? Verify its fingerprint with the recipient.\n\nSHA-256:\n{PasskeyBackup.Fingerprint(certificate)}\n\nSource passkeys will remain on this stick. Counters are preserved; using multiple restored copies may cause sign-in failures.", confirmText: "Export")) return;
-        var destination = await SaveFileAsync("Save encrypted passkey backup", "passkeys.vfidobackup", "vfidobackup");
+        var destination = await SaveFileAsync("Save CXP response", "passkeys", "cxp.rsp");
         if (destination == null) return;
         var backup = await _stickManager!.ExportPasskeysAsync(_stick!.Name, ids, certificate);
         await WriteFileAsync(destination, backup);
@@ -199,7 +199,7 @@ public partial class CredentialsWindow : Window
 
     private async Task ImportPasskeysAsync()
     {
-        var source = await OpenFileAsync("Select encrypted VirtualFido backup", "vfidobackup");
+        var source = await OpenFileAsync("Select CXP response", "cxp.rsp");
         if (source == null) return;
         var privateFile = await OpenFileAsync("Select recipient private key", "pfx", "p12");
         if (privateFile == null) return;

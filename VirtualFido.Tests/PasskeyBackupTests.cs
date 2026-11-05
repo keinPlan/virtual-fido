@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Formats.Cbor;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -51,6 +52,11 @@ public sealed class PasskeyBackupTests : IClassFixture<BackupIdentityFixture>, I
     {
         Assert.False(_identity.Public.HasPrivateKey);
         Assert.True(_identity.Private.HasPrivateKey);
+        using var publicKey = _identity.Public.GetECDiffieHellmanPublicKey();
+        Assert.NotNull(publicKey);
+        Assert.Equal("1.2.840.10045.3.1.7", publicKey.ExportParameters(false).Curve.Oid.Value);
+        Assert.Equal(X509KeyUsageFlags.KeyAgreement,
+            Assert.Single(_identity.Public.Extensions.OfType<X509KeyUsageExtension>()).KeyUsages);
         Assert.Equal(PasskeyBackup.Fingerprint(_identity.Public), PasskeyBackup.Fingerprint(_identity.Private));
         Assert.ThrowsAny<CryptographicException>(() => new X509Certificate2(
             _identity.Identity.PasswordProtectedPfx, "wrong password", X509KeyStorageFlags.EphemeralKeySet));
@@ -115,16 +121,37 @@ public sealed class PasskeyBackupTests : IClassFixture<BackupIdentityFixture>, I
     [InlineData("ciphertext")]
     [InlineData("tag")]
     [InlineData("nonce")]
-    [InlineData("wrappedKey")]
+    [InlineData("hpkeKey")]
+    [InlineData("header")]
     public async Task TamperedBackup_IsRejectedBeforeAnyDestinationWrites(string field)
     {
         var source = MemoryManager();
         var registration = await Register(source);
         var backup = await source.ExportPasskeysAsync(new[] { registration.CredentialId }, _identity.Public);
         var envelope = JsonNode.Parse(backup)!;
-        var bytes = Convert.FromBase64String(envelope[field]!.GetValue<string>());
-        bytes[0] ^= 1;
-        envelope[field] = Convert.ToBase64String(bytes);
+        var parts = ReadJwe(envelope).Split('.');
+        var index = field switch { "ciphertext" => 3, "tag" => 4, "nonce" => 2, _ => 0 };
+        if (field == "hpkeKey")
+        {
+            using var other = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+            var point = other.ExportParameters(false).Q;
+            envelope["hpke"]!["key"]!["x"] = Base64Url(point.X!);
+            envelope["hpke"]!["key"]!["y"] = Base64Url(point.Y!);
+        }
+        else if (field == "header")
+        {
+            var header = JsonNode.Parse(CxpTransport.Decode(parts[0]))!;
+            header["kid"] = new string('0', 64);
+            parts[0] = Base64Url(Encoding.UTF8.GetBytes(header.ToJsonString()));
+            ReplaceJwe(envelope, string.Join('.', parts));
+        }
+        else
+        {
+            var data = CxpTransport.Decode(parts[index]);
+            data[0] ^= 1;
+            parts[index] = Base64Url(data);
+            ReplaceJwe(envelope, string.Join('.', parts));
+        }
         var destination = MemoryManager();
         await Assert.ThrowsAnyAsync<CryptographicException>(() => destination.ImportPasskeysAsync(
             Encoding.UTF8.GetBytes(envelope.ToJsonString()), _identity.Private));
@@ -197,9 +224,10 @@ public sealed class PasskeyBackupTests : IClassFixture<BackupIdentityFixture>, I
 
     [Theory]
     [InlineData("version", "2")]
-    [InlineData("format", "\"Other.Format\"")]
-    [InlineData("algorithm", "\"Other.Algorithm\"")]
-    [InlineData("nonce", "null")]
+    [InlineData("archive", "\"other\"")]
+    [InlineData("hpke", "null")]
+    [InlineData("payload", "null")]
+    [InlineData("payload", "\"AQ==\"")]
     public async Task UnsupportedOrMalformedEnvelope_IsRejected(string field, string json)
     {
         var source = MemoryManager();
@@ -220,6 +248,12 @@ public sealed class PasskeyBackupTests : IClassFixture<BackupIdentityFixture>, I
     [InlineData("privateKey")]
     [InlineData("duplicate")]
     [InlineData("version")]
+    [InlineData("counterPolicy")]
+    [InlineData("negativeCounter")]
+    [InlineData("metadataId")]
+    [InlineData("duplicateMetadata")]
+    [InlineData("base64url")]
+    [InlineData("fidoExtension")]
     public async Task AuthenticatedButInvalidPayload_IsRejectedBeforeWrites(string invalidField)
     {
         var source = MemoryManager();
@@ -227,19 +261,29 @@ public sealed class PasskeyBackupTests : IClassFixture<BackupIdentityFixture>, I
         var backup = await source.ExportPasskeysAsync(new[] { registration.CredentialId }, _identity.Public);
         var malformed = RewritePayload(backup, payload =>
         {
-            var credentials = payload["credentials"]!.AsArray();
+            var item = payload["accounts"]![0]!["items"]![0]!;
+            var credentials = item["credentials"]!.AsArray();
             var entry = credentials[0]!;
             switch (invalidField)
             {
-                case "protection": entry["metadata"]!["credProtect"] = 0; break;
-                case "userHandle": entry["metadata"]!["userId"] = Convert.ToBase64String(new byte[65]); break;
-                case "credentialId": entry["metadata"]!["credentialId"] = ""; break;
+                case "protection": item["extensions"]![0]!["credProtect"] = 0; break;
+                case "userHandle": entry["userHandle"] = Base64Url(new byte[65]); break;
+                case "credentialId": entry["credentialId"] = ""; break;
                 case "privateKey":
                     using (var wrongCurve = ECDsa.Create(ECCurve.NamedCurves.nistP384))
-                        entry["privateKeyPkcs8"] = Convert.ToBase64String(wrongCurve.ExportPkcs8PrivateKey());
+                        entry["key"] = Base64Url(wrongCurve.ExportPkcs8PrivateKey());
                     break;
                 case "duplicate": credentials.Add(entry.DeepClone()); break;
-                case "version": payload["version"] = 2; break;
+                case "version": payload["version"]!["major"] = 2; break;
+                case "counterPolicy":
+                    item["extensions"]![0]!["signCount"] = 1;
+                    item["extensions"]![0]!["disableSignCount"] = true;
+                    break;
+                case "negativeCounter": item["extensions"]![0]!["signCount"] = -1; break;
+                case "metadataId": item["extensions"]![0]!["credentialId"] = "AQ"; break;
+                case "duplicateMetadata": item["extensions"]!.AsArray().Add(item["extensions"]![0]!.DeepClone()); break;
+                case "base64url": entry["userHandle"] = "AQID="; break;
+                case "fidoExtension": entry["fido2Extensions"] = new JsonObject { ["credBlob"] = "AQID" }; break;
             }
         });
         var destination = MemoryManager();
@@ -247,38 +291,199 @@ public sealed class PasskeyBackupTests : IClassFixture<BackupIdentityFixture>, I
         Assert.Empty(await destination.FindAllCredentialsAsync());
     }
 
+    [Fact]
+    public async Task Export_UsesCxfStructureAndPreservesNonzeroCounterInNamedExtension()
+    {
+        using var source = MemoryManager();
+        var registration = await Register(source, resident: false);
+        await source.IncrementSignCountAsync(registration.CredentialId);
+        var encrypted = await source.ExportPasskeysAsync(new[] { registration.CredentialId }, _identity.Public);
+        var response = JsonNode.Parse(encrypted)!;
+        Assert.Equal(new[] { "version", "hpke", "archive", "exporter", "payload" }, response.AsObject().Select(p => p.Key));
+        Assert.Equal(0, response["version"]!.GetValue<int>());
+        Assert.Equal("base", response["hpke"]!["mode"]!.GetValue<string>());
+        Assert.Equal(16, response["hpke"]!["kem"]!.GetValue<int>());
+        Assert.Equal(1, response["hpke"]!["kdf"]!.GetValue<int>());
+        Assert.Equal(1, response["hpke"]!["aead"]!.GetValue<int>());
+        Assert.Equal("deflate", response["archive"]!.GetValue<string>());
+        Assert.Equal("P-256", response["hpke"]!["key"]!["crv"]!.GetValue<string>());
+        Assert.Equal(5, ReadJwe(response).Split('.').Length);
+        RewritePayload(encrypted, payload =>
+        {
+            Assert.Equal(1, payload["version"]!["major"]!.GetValue<int>());
+            Assert.Equal(0, payload["version"]!["minor"]!.GetValue<int>());
+            Assert.Equal("VirtualFido", payload["exporterDisplayName"]!.GetValue<string>());
+            var account = payload["accounts"]![0]!;
+            Assert.Empty(account["collections"]!.AsArray());
+            var item = account["items"]![0]!;
+            var passkey = item["credentials"]![0]!;
+            Assert.Equal("passkey", passkey["type"]!.GetValue<string>());
+            Assert.Equal(Base64Url(registration.CredentialId), passkey["credentialId"]!.GetValue<string>());
+            Assert.Equal("AQID", passkey["userHandle"]!.GetValue<string>());
+            Assert.DoesNotContain("=", passkey["key"]!.GetValue<string>());
+            var metadata = item["extensions"]![0]!;
+            Assert.Equal(payload["exporterRpId"]!.GetValue<string>() + "/CredentialMetadata", metadata["name"]!.GetValue<string>());
+            Assert.Equal(1u, metadata["signCount"]!.GetValue<uint>());
+            Assert.False(metadata["isResident"]!.GetValue<bool>());
+        });
+        using var destination = MemoryManager();
+        await destination.ImportPasskeysAsync(encrypted, _identity.Private);
+        Assert.Equal(1u, (await destination.FindCredentialAsync(registration.CredentialId, "example.com"))!.SignCount);
+        Assert.Equal(2u, await destination.IncrementSignCountAsync(registration.CredentialId));
+    }
+
+    [Fact]
+    public async Task CxfWithoutVirtualFidoMetadata_KeepsZeroCounterAcrossRestartAndReexport()
+    {
+        using var source = MemoryManager();
+        var registration = await Register(source);
+        var encrypted = await source.ExportPasskeysAsync(new[] { registration.CredentialId }, _identity.Public);
+        var standardPayload = RewritePayload(encrypted, payload =>
+        {
+            var item = payload["accounts"]![0]!["items"]![0]!.AsObject();
+            item.Remove("extensions");
+            item["credentials"]!.AsArray().Add(new JsonObject { ["type"] = "future-credential" });
+            payload["futureField"] = "ignored";
+        });
+        using (var destination = FileManager())
+            await destination.ImportPasskeysAsync(standardPayload, _identity.Private);
+        using (var restarted = FileManager())
+        {
+            var restored = (await restarted.FindCredentialAsync(registration.CredentialId, "example.com"))!;
+            Assert.True(restored.IsResident);
+            Assert.Equal(1, restored.CredProtect);
+            Assert.Equal(0u, await restarted.IncrementSignCountAsync(registration.CredentialId));
+            var reexported = await restarted.ExportPasskeysAsync(new[] { registration.CredentialId }, _identity.Public);
+            using var second = MemoryManager();
+            await second.ImportPasskeysAsync(reexported, _identity.Private);
+            Assert.Equal(0u, await second.IncrementSignCountAsync(registration.CredentialId));
+        }
+        using var final = FileManager();
+        Assert.Equal(0u, await final.IncrementSignCountAsync(registration.CredentialId));
+    }
+
+    [Fact]
+    public async Task LegacyFormat_IsRejected()
+    {
+        using var source = MemoryManager();
+        var registration = await Register(source);
+        var encrypted = await source.ExportPasskeysAsync(new[] { registration.CredentialId }, _identity.Public);
+        var envelope = JsonNode.Parse(encrypted)!;
+        envelope = new JsonObject { ["format"] = "VirtualFido.PasskeyBackup", ["version"] = 1 };
+        using var destination = MemoryManager();
+        await Assert.ThrowsAsync<InvalidDataException>(() => destination.ImportPasskeysAsync(
+            Encoding.UTF8.GetBytes(envelope.ToJsonString()), _identity.Private));
+        Assert.Empty(await destination.FindAllCredentialsAsync());
+    }
+
+    private static string Base64Url(byte[] bytes) =>
+        Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+    [Fact]
+    public async Task ChangedExporter_IsRejectedByHpkeMetadataBinding()
+    {
+        using var source = MemoryManager();
+        var registration = await Register(source);
+        var encrypted = await source.ExportPasskeysAsync(new[] { registration.CredentialId }, _identity.Public);
+        var response = JsonNode.Parse(encrypted)!;
+        response["exporter"] = "other.example";
+        using var destination = MemoryManager();
+        await Assert.ThrowsAnyAsync<CryptographicException>(() => destination.ImportPasskeysAsync(
+            Encoding.UTF8.GetBytes(response.ToJsonString()), _identity.Private));
+        Assert.Empty(await destination.FindAllCredentialsAsync());
+    }
+
+    [Theory]
+    [InlineData("mode", "\"auth\"")]
+    [InlineData("kem", "32")]
+    [InlineData("kdf", "2")]
+    [InlineData("aead", "2")]
+    [InlineData("key", "null")]
+    public async Task UnsupportedHpkeParameters_AreRejected(string field, string json)
+    {
+        using var source = MemoryManager();
+        var registration = await Register(source);
+        var encrypted = await source.ExportPasskeysAsync(new[] { registration.CredentialId }, _identity.Public);
+        var response = JsonNode.Parse(encrypted)!;
+        response["hpke"]![field] = JsonNode.Parse(json);
+        using var destination = MemoryManager();
+        await Assert.ThrowsAsync<InvalidDataException>(() => destination.ImportPasskeysAsync(
+            Encoding.UTF8.GetBytes(response.ToJsonString()), _identity.Private));
+        Assert.Empty(await destination.FindAllCredentialsAsync());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnexpectedArchiveEntries_AreRejected(bool duplicateIndex)
+    {
+        using var source = MemoryManager();
+        var registration = await Register(source);
+        var encrypted = await source.ExportPasskeysAsync(new[] { registration.CredentialId }, _identity.Public);
+        var response = JsonNode.Parse(encrypted)!;
+        using var buffer = new MemoryStream();
+        using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, true))
+        {
+            using (var index = archive.CreateEntry("CXP-Export/index.jwe").Open())
+                index.Write(Encoding.ASCII.GetBytes(ReadJwe(response)));
+            archive.CreateEntry(duplicateIndex ? "CXP-Export/index.jwe" : "../unexpected.jwe");
+        }
+        response["payload"] = Base64Url(buffer.ToArray());
+        using var destination = MemoryManager();
+        await Assert.ThrowsAsync<InvalidDataException>(() => destination.ImportPasskeysAsync(
+            Encoding.UTF8.GetBytes(response.ToJsonString()), _identity.Private));
+        Assert.Empty(await destination.FindAllCredentialsAsync());
+    }
+
+    [Fact]
+    public void RsaRecipient_IsRejectedWithReplacementGuidance()
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest("CN=Old transfer", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+        Assert.Contains("Create a new transfer certificate", Assert.Throws<InvalidOperationException>(() =>
+            PasskeyBackup.ValidateRecipient(certificate)).Message);
+    }
+
     // Construct an authenticated, deliberately invalid payload as any holder of the public
     // recipient certificate could do. Payload validation must be independent of encryption.
     private byte[] RewritePayload(byte[] backup, Action<JsonNode> change)
     {
-        var envelope = JsonNode.Parse(backup)!;
-        using var rsa = _identity.Private.GetRSAPrivateKey()!;
-        var key = rsa.Decrypt(Convert.FromBase64String(envelope["wrappedKey"]!.GetValue<string>()), RSAEncryptionPadding.OaepSHA256);
-        var ciphertext = Convert.FromBase64String(envelope["ciphertext"]!.GetValue<string>());
-        var plaintext = new byte[ciphertext.Length];
-        var aad = Encoding.UTF8.GetBytes(string.Join("\n", new[]
+        var plaintext = CxpTransport.DecryptPayload(backup, _identity.Private);
+        byte[] changed = [];
+        try
         {
-            envelope["format"]!.GetValue<string>(), envelope["version"]!.GetValue<int>().ToString(),
-            envelope["algorithm"]!.GetValue<string>(), envelope["recipient"]!.GetValue<string>(),
-            envelope["wrappedKey"]!.GetValue<string>(),
-        }));
-        using var aes = new AesGcm(key, 16);
-        aes.Decrypt(Convert.FromBase64String(envelope["nonce"]!.GetValue<string>()), ciphertext,
-            Convert.FromBase64String(envelope["tag"]!.GetValue<string>()), plaintext, aad);
-        var payload = JsonNode.Parse(plaintext)!;
-        change(payload);
-        var changed = Encoding.UTF8.GetBytes(payload.ToJsonString());
-        var nonce = RandomNumberGenerator.GetBytes(12);
-        ciphertext = new byte[changed.Length];
-        var tag = new byte[16];
-        aes.Encrypt(nonce, changed, ciphertext, tag, aad);
-        envelope["nonce"] = Convert.ToBase64String(nonce);
-        envelope["ciphertext"] = Convert.ToBase64String(ciphertext);
-        envelope["tag"] = Convert.ToBase64String(tag);
-        CryptographicOperations.ZeroMemory(key);
-        CryptographicOperations.ZeroMemory(plaintext);
-        CryptographicOperations.ZeroMemory(changed);
-        return Encoding.UTF8.GetBytes(envelope.ToJsonString());
+            var payload = JsonNode.Parse(plaintext)!;
+            change(payload);
+            changed = Encoding.UTF8.GetBytes(payload.ToJsonString());
+            return CxpTransport.EncryptPayload(changed, _identity.Public);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(plaintext);
+            CryptographicOperations.ZeroMemory(changed);
+        }
+    }
+
+    private static string ReadJwe(JsonNode response)
+    {
+        using var buffer = new MemoryStream(CxpTransport.Decode(response["payload"]!.GetValue<string>()));
+        using var archive = new ZipArchive(buffer, ZipArchiveMode.Read);
+        var entry = Assert.Single(archive.Entries);
+        Assert.Equal("CXP-Export/index.jwe", entry.FullName);
+        using var reader = new StreamReader(entry.Open(), Encoding.ASCII);
+        return reader.ReadToEnd();
+    }
+
+    private static void ReplaceJwe(JsonNode response, string jwe)
+    {
+        using var buffer = new MemoryStream();
+        using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, true))
+        {
+            using var stream = archive.CreateEntry("CXP-Export/index.jwe", CompressionLevel.Optimal).Open();
+            stream.Write(Encoding.ASCII.GetBytes(jwe));
+        }
+        response["payload"] = Base64Url(buffer.ToArray());
     }
 
     private sealed class FailSecondSave(ICredentialStore inner) : ICredentialStore

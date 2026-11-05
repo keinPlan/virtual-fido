@@ -11,6 +11,9 @@ namespace VFido.SecretManager
 
         public uint SignCount { get; set; }
 
+        /// <summary>Standard CXF imports keep a zero counter. VirtualFido transfers preserve their counter policy.</summary>
+        public bool DisableSignCount { get; init; }
+
         /// <summary>Set when created with options.rk=true; only resident credentials are discoverable via an empty allowList.</summary>
         public bool IsResident { get; init; }
 

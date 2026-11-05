@@ -102,6 +102,7 @@ namespace VFido.SecretManager
             {
                 ThrowIfDisposed();
                 var credential = RequireCredential(credentialId);
+                if (credential.DisableSignCount) return Task.FromResult(0u);
                 credential.SignCount++;
                 // Must persist explicitly: ICredentialStore.Find isn't guaranteed to return a live,
                 // shared reference (InMemoryCredentialStore does; FileBasedCredentialStore decodes a
