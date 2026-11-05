@@ -5,6 +5,9 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer
     {
         public int ListenPort { get; set; } = 5443;
 
+        /// <summary>FIDO storage provider: File (default), Tpm, or Memory. Restart to change; existing credentials are not migrated.</summary>
+        public ServerStorageProvider StorageProvider { get; set; } = ServerStorageProvider.File;
+
         /// <summary>PFX containing this server's TLS certificate + private key (presented to clients). Produced by the "init" admin command.</summary>
         public required string ServerCertificatePath { get; set; }
         public string? ServerCertificatePassword { get; set; }
@@ -26,10 +29,14 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer
         /// <summary>Resolve configured relative paths against the executable directory for both CLI and server startup.</summary>
         public void ResolvePaths(string baseDirectory)
         {
+            if (!Enum.IsDefined(StorageProvider))
+                throw new InvalidOperationException("StorageProvider must be File, Tpm, or Memory.");
             ServerCertificatePath = Path.GetFullPath(ServerCertificatePath, baseDirectory);
             ClientCaCertificatePath = Path.GetFullPath(ClientCaCertificatePath, baseDirectory);
             PkiRootPath = Path.GetFullPath(PkiRootPath, baseDirectory);
             SecretsRootPath = Path.GetFullPath(SecretsRootPath, baseDirectory);
         }
     }
+
+    public enum ServerStorageProvider { File, Tpm, Memory }
 }

@@ -46,13 +46,15 @@ public static class ManagementDashboard
                         .Select(path =>
                         {
                             var name = Path.GetFileName(path);
-                            var credentials = Path.Combine(path, "credentials");
+                            var credentials = options.StorageProvider == ServerStorageProvider.Tpm
+                                ? Path.Combine(path, "tpm", "credentials") : Path.Combine(path, "credentials");
                             return new
                             {
                                 name,
                                 passwordRequired = File.Exists(Path.Combine(path, "verifier.bin")),
-                                credentialCount = Directory.Exists(credentials)
-                                    ? Directory.EnumerateFiles(credentials, "*.cred").Count() : 0,
+                                credentialCount = options.StorageProvider == ServerStorageProvider.Memory
+                                    ? app.Services.GetRequiredService<UserDirectoryResolver>().GetMemoryCredentialCount(name)
+                                    : Directory.Exists(credentials) ? Directory.EnumerateFiles(credentials, "*.cred").Count() : 0,
                                 activeSessions = counts.GetValueOrDefault(name),
                                 certificateIssued = File.Exists(Path.Combine(path, "client.pfx"))
                             };
