@@ -345,13 +345,13 @@ public sealed class TpmBasedSecretStore : IKeyStore, ICredentialKeyImporter, IDi
                 Logger.Info("Verified persistent TPM primary at 0x{0:X8}.", PrimaryCacheHandle);
                 return handle;
             }
-            Logger.Warn("TPM primary cache handle 0x{0:X8} contains a different object; leaving it intact.", PrimaryCacheHandle);
+            Logger.Debug("Persistent TPM handle 0x{0:X8} does not match this store's primary; leaving it intact.", PrimaryCacheHandle);
             return null;
         }
         catch (TpmException)
         {
             // Missing handle or a TPM that does not permit access to persistent objects.
-            Logger.Debug("TPM primary cache unavailable at 0x{0:X8} (TPM response: {1}).", PrimaryCacheHandle, tpm._GetLastResponseCode());
+            Logger.Debug("TPM primary unavailable at 0x{0:X8} (TPM response: {1}).", PrimaryCacheHandle, tpm._GetLastResponseCode());
             return null;
         }
     }
@@ -371,6 +371,8 @@ public sealed class TpmBasedSecretStore : IKeyStore, ICredentialKeyImporter, IDi
         {
             // Caching is optional: owner authorization, OS policy, or NV space may prevent it.
             Logger.Warn("TPM primary caching failed (TPM response: {0}); continuing with transient primary. Future connections may remain slow.", tpm._GetLastResponseCode());
+            if (tpm._GetLastResponseCode() == TpmRc.TbsCommandBlocked)
+                Logger.Warn("Windows TBS blocked TPM2_EvictControl. Retry primary caching from an elevated process; TPM owner authorization is also required. Modern Windows TPM 2.0 command restrictions cannot be changed through registry allow lists.");
         }
     }
     private static void ClearSensitive(Sensitive sensitive)

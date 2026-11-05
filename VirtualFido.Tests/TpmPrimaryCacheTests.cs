@@ -17,6 +17,7 @@ public sealed class TpmPrimaryCacheTests
             using (var store = new TpmBasedSecretStore(device.Directory, () => device)) { }
             Assert.DoesNotContain(TpmCc.CreatePrimary, device.Commands);
             Assert.DoesNotContain(TpmCc.EvictControl, device.Commands);
+            Assert.All(device.ReadPublicHandles, handle => Assert.Equal(0x81015646u, handle));
             Assert.Equal(new uint[] { 0x80000001 }, device.Flushed);
         });
     }
@@ -35,6 +36,7 @@ public sealed class TpmPrimaryCacheTests
             // The fake rejects CreatePrimary, allowing us to observe fallback without real hardware.
             Assert.Throws<TpmException>(() => new TpmBasedSecretStore(device.Directory, () => device));
             Assert.Contains(TpmCc.CreatePrimary, device.Commands);
+            Assert.All(device.ReadPublicHandles, handle => Assert.Equal(0x81015646u, handle));
             Assert.DoesNotContain(TpmCc.Load, device.Commands);
             Assert.Empty(device.Flushed);
         });
@@ -76,7 +78,9 @@ public sealed class TpmPrimaryCacheTests
         public string Directory { get; } = directory;
         public List<TpmCc> Commands { get; } = new();
         public List<uint> Flushed { get; } = new();
+        public List<uint> ReadPublicHandles { get; } = new();
         public bool FailLoad { get; set; }
+        public uint PublicHandle { get; set; } = 0x81015646;
         public override void Connect() { NeedsHMAC = false; }
         public override void Close() { }
 
@@ -84,8 +88,11 @@ public sealed class TpmPrimaryCacheTests
         {
             var code = (TpmCc)BinaryPrimitives.ReadUInt32BigEndian(command.AsSpan(6));
             Commands.Add(code);
+            if (code == TpmCc.ReadPublic)
+                ReadPublicHandles.Add(BinaryPrimitives.ReadUInt32BigEndian(command.AsSpan(10)));
             using var body = new MemoryStream();
-            if (code == TpmCc.ReadPublic && cached != null)
+            if (code == TpmCc.ReadPublic && cached != null &&
+                BinaryPrimitives.ReadUInt32BigEndian(command.AsSpan(10)) == PublicHandle)
             {
                 WriteSized(body, cached.GetTpmRepresentation());
                 WriteSized(body, cached.GetName());

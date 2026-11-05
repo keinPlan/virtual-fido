@@ -4,9 +4,17 @@ This backend imports an externally generated RSA storage master and generates ne
 
 ## Connection performance
 
-RSA primary creation can take tens of seconds on some TPMs. After creating and validating the deterministic owner primary, the backend attempts to keep a persistent copy at `0x81015646`. Subsequent connections read that object and verify its TPM Name against `master.json`, skipping `TPM2_CreatePrimary`. The cache is shared by local stores using the same primary and survives application restarts and reboots. Existing stores populate it on their first successful primary creation; no key-file migration is required.
+RSA primary creation can take tens of seconds on some TPMs. The backend creates its own deterministic owner primary and attempts to keep a persistent copy at `0x81015646` using `TPM2_EvictControl`. Subsequent connections verify that object's TPM Name against `master.json` and reuse it without `TPM2_CreatePrimary`. The application does not use the Windows SRK. Existing stores using the application primary can populate the cache without migrating key files.
 
-Caching requires permission to persist an object under the owner hierarchy and available TPM NV space. If Windows policy, owner authorization, or an occupied handle prevents caching, connections retain the transient-primary behavior and its creation delay. The backend never replaces an occupied handle or evicts the cached primary on disconnect. A missing or mismatched cache falls back to recreating and validating the original primary; a TPM clear still requires recovery. The first setup or uncached connection can therefore remain slow.
+Caching requires available TPM NV space, owner hierarchy authorization, and permission from Windows TBS to execute `TPM2_EvictControl`. If caching fails, the store logs the TPM response and continues with a transient primary; future connections can remain slow. An occupied handle is never replaced, and the persistent primary is never evicted on disconnect.
+
+### Windows reports TbsCommandBlocked
+
+Close the GUI, run the rebuilt GUI **as administrator**, and connect once to retry caching with an elevated caller. If successful, the log reports `TPM primary cached at 0x81015646`; subsequent ordinary connections reuse that object. Elevation does not supply a nonempty owner authorization automatically. The backend API accepts `ownerAuthorization`; the GUI currently uses empty authorization.
+
+Elevation is a diagnostic next step, not a guarantee: Windows can still deny the command. On Windows 10 version 1809 and later, the TPM 2.0 command allow list is fixed in the TPM driver and cannot be changed using registry allow-list settings. The `IgnoreDefaultList`/`IgnoreLocalList` guidance for TPM 1.2 does not unblock TPM 2.0 commands on these versions. See [Microsoft's TBS command-blocking documentation](https://learn.microsoft.com/en-us/windows/win32/tbs/command-blocking). The application does not modify system TPM policy or take ownership of the TPM.
+
+If a stick was provisioned using the earlier Windows SRK implementation, restore its original recovery PFX through **Edit > Restore master on this TPM** to rewrap the master under the application's own primary. Credentials and metadata remain compatible. A TPM clear also requires recovery.
 
 Connection diagnostics use the application's NLog configuration. Info messages report primary creation and total opening time in milliseconds, cache verification, and successful persistence. Debug messages include transport and master-loading timings; warnings explain cache mismatches or persistence failures with TPM response codes. In the GUI these appear in `logs/<date>.log` beside the executable and in console/debugger output. Authorization bytes, passwords, key material, and credential data are not logged.
 
