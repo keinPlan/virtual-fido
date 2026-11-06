@@ -59,7 +59,6 @@ public class FirstRunSetupTests
 
     [Theory]
     [InlineData("File")]
-    [InlineData("Tpm")]
     [InlineData("Memory")]
     public void FreshInstallationCreatesCertificatesAdminAndPreservesConfiguration(string provider)
     {

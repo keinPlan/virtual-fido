@@ -17,6 +17,7 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer
         private readonly string _secretsRoot;
         private readonly UserKeyProtector _keyProtector;
         private readonly ServerStorageProvider _provider;
+        private readonly MtlsBasedSecretStoreServerOptions _options;
         private bool _disposed;
         private readonly object _sync = new();
         private readonly Dictionary<string, IFido2SecretManager> _managers = new(StringComparer.Ordinal);
@@ -26,6 +27,7 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer
             _secretsRoot = options.SecretsRootPath;
             _keyProtector = keyProtector;
             _provider = options.StorageProvider;
+            _options = options;
         }
 
         public string GetUserDirectory(string username) => Path.Combine(_secretsRoot, username);
@@ -54,7 +56,7 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer
             // FileBasedSecretStore also implements IPinStateStore; Fido2SecretManager detects and
             // forwards LoadPinStateAsync/SavePinStateAsync to it automatically.
             return BuildManager(username, keyStore, credentialStore,
-                () => new TpmBasedCredentialStore(Path.Combine(userDirectory, "tpm", "credentials"), username, password, userDirectory));
+                () => new TpmBasedCredentialStore(Path.Combine(userDirectory, "credentials"), username, password, userDirectory));
         }
 
         public IFido2SecretManager BuildPasswordlessManager(string username)
@@ -68,7 +70,7 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer
             var credentialStore = new FileBasedCredentialStore(
                 Path.Combine(userDirectory, "credentials"), key, userDirectory);
             return BuildManager(username, keyStore, credentialStore,
-                () => new TpmBasedCredentialStore(Path.Combine(userDirectory, "tpm", "credentials"), key, userDirectory));
+                () => new TpmBasedCredentialStore(Path.Combine(userDirectory, "credentials"), key, userDirectory));
         }
 
         private IFido2SecretManager BuildManager(string username,
@@ -91,13 +93,9 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer
                 }
                 else if (_provider == ServerStorageProvider.Tpm)
                 {
-                    var directory = Path.Combine(GetUserDirectory(username), "tpm", "keys");
-                    var authorization = Convert.ToBase64String(_keyProtector.GetOrCreateKey(GetUserDirectory(username)));
-                    if (!File.Exists(Path.Combine(directory, "master.json")))
-                    {
-                        using var master = TpmMasterKey.Generate();
-                        TpmBasedSecretStore.TpmBasedSecretStore.Provision(directory, master, masterPassword: authorization);
-                    }
+                    var directory = Path.Combine(GetUserDirectory(username), "keys");
+                    ServerTpmMaster.CopyToUser(_options, GetUserDirectory(username));
+                    var authorization = ServerTpmMaster.GetAuthorization(_options);
                     var credentials = tpmCredentials();
                     var keys = new TpmBasedSecretStore.TpmBasedSecretStore(directory, masterPassword: authorization);
                     manager = new Fido2SecretManager(keys, credentials, fileKeys, ownsKeyStore: true);

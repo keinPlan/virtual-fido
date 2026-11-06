@@ -29,6 +29,8 @@ if (FirstRunSetup.IsFreshInstallation(serverOptions))
         return 0;
 }
 
+ServerTpmMaster.DeleteRecoveryExport(serverOptions);
+
 var serverCertificate = LoadCertificate(serverOptions.ServerCertificatePath, serverOptions.ServerCertificatePassword);
 var clientCaCertificate = LoadCertificate(serverOptions.ClientCaCertificatePath);
 var revocations = RevocationStore.Load(serverOptions.PkiRootPath);

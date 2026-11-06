@@ -46,8 +46,7 @@ public static class ManagementDashboard
                         .Select(path =>
                         {
                             var name = Path.GetFileName(path);
-                            var credentials = options.StorageProvider == ServerStorageProvider.Tpm
-                                ? Path.Combine(path, "tpm", "credentials") : Path.Combine(path, "credentials");
+                            var credentials = Path.Combine(path, "credentials");
                             return new
                             {
                                 name,

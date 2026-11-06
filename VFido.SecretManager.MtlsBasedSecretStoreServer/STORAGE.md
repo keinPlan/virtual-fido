@@ -9,13 +9,19 @@ Set `MtlsBasedSecretStoreServer.StorageProvider` in `appsettings.json` to `File`
 | Provider | Private keys | Credential metadata / PIN state |
 | --- | --- | --- |
 | File | AES-encrypted files in each user's `keys` directory | Encrypted files |
-| Tpm | TPM-wrapped files in each user's `tpm/keys` directory; signing runs in the local TPM | Encrypted metadata in `tpm/credentials`; encrypted PIN state |
+| Tpm | TPM-wrapped files in each user's `keys` directory; signing runs in the local TPM | Encrypted metadata in `credentials`; encrypted PIN state |
 | Memory | Process memory | Process memory; lost when the server stops |
 
 All modes retain the existing mTLS and optional login password requirements. Memory mode shares a user's credentials across sessions for the lifetime of the server; certificates, login verifiers, and server PKI still use disk storage.
 
-TPM mode requires a supported local TPM accessible to the server account. It provisions a per-user master at `<SecretsRootPath>/<username>/tpm/keys/master.json` on first access and uses a Data Protection wrapped random authorization for unattended access. Keep the PKI/keyring and user directories together. Automatically provisioned masters have no exported recovery PFX: clearing or replacing the TPM makes their credentials unusable. See the TPM provider README for its explicit recovery provisioning API. There is no fallback to software signing when TPM access fails.
+TPM mode requires a supported local TPM accessible to the server account. During setup, upload an existing `vfido-tpm-recovery.pfx` or leave the upload empty to generate a new password-protected recovery PFX. Enter its recovery password (at least 12 characters). Setup imports that PFX to provision `<PkiRootPath>/tpm/master.json` and opens it immediately to verify TPM access. The PFX contains the portable parent key and wrapping seed; `master.json` is its TPM-bound representation.
 
-Changing the provider does not migrate or delete existing credentials. File and TPM credentials use separate directories; switching back restores access to that provider's data. Memory credentials disappear at shutdown. This setting controls FIDO keys, not TLS/CA certificates or ASP.NET Data Protection keys.
+The setup administrator and each subsequent `create-user` receive a copy of this master at `<SecretsRootPath>/<username>/keys/master.json`. Wrapped signing keys and attestation live in `keys`, with encrypted metadata in the sibling `credentials` folder. There is no per-user `tpm` folder. The master's common authorization stays once on the server in `<PkiRootPath>/tpm/wrapped.key`; it is not copied to users. A passwordless user's single top-level `wrapped.key` protects their metadata and PIN state; password users derive that encryption key from their login password. First access also copies the template for users that have not yet received it. Existing different user masters or the old nested `tpm` layout are rejected rather than overwritten; they need a separate migration.
+
+After setup, download **vfido-tpm-recovery.pfx** before selecting **Close setup and start server**. The temporary export at `<PkiRootPath>/tpm/vfido-tpm-recovery.pfx` is deleted when the normal server starts, including on subsequent starts. The downloaded offline backup is not touched. Only the provisioned template, wrapped authorization, and per-user copies remain on the server. The recovery password is not saved in configuration.
+
+Keep the recovery PFX and its password offline, and back up the PKI/keyring and user directories. The recovery PFX restores the TPM parent on replacement hardware; it does not contain users' credentials or their encrypted metadata. See the TPM provider README for its explicit recovery provisioning API. There is no fallback to software signing when TPM access fails. TPM installations created by the previous per-user auto-provisioning flow require migration; file/memory installations need TPM setup before switching to this provider.
+
+Changing the provider does not migrate or delete existing credentials. File and TPM now use the same `keys` and `credentials` paths, but their key formats differ: switching providers for existing credentials requires migration. Memory credentials disappear at shutdown. This setting controls FIDO keys, not TLS/CA certificates or ASP.NET Data Protection keys.
 
 The management dashboard counts credentials for the selected provider.

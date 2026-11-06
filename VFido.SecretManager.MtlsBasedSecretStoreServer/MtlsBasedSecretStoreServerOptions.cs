@@ -20,7 +20,7 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer
         /// <summary>Client certificate SHA-1 thumbprints allowed to view /admin. Empty disables dashboard access.</summary>
         public string[] AdminCertificateThumbprints { get; set; } = [];
 
-        /// <summary>Root CA/intermediate CA/master protection cert state, managed by the admin CLI. Defaults next to the server executable.</summary>
+        /// <summary>Server PKI, protection certificate, and TPM master template in <c>tpm/master.json</c>. Defaults next to the server executable.</summary>
         public string PkiRootPath { get; set; } = Path.Combine(AppContext.BaseDirectory, "pki");
 
         /// <summary>Per-user FIDO secrets: <c>&lt;SecretsRootPath&gt;\&lt;username&gt;\{keys,credentials,certs}</c>. Defaults next to the server executable.</summary>

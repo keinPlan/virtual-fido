@@ -121,6 +121,7 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer.Cli
             var caPassphrase = ReadPasswordPrompt("CA passphrase");
 
             var userDirectory = Path.Combine(options.SecretsRootPath, username);
+            ServerTpmMaster.CopyToUser(options, userDirectory);
             Directory.CreateDirectory(userDirectory);
 
             if (!noPassword)
