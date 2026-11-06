@@ -1,3 +1,4 @@
+using VFido.SecretManager.Protection;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.DataProtection;
 using VFido.SecretManager.FileBasedSecretStore;
@@ -29,7 +30,7 @@ namespace VirtualFido.Tests
             ca.EnsureRootAndIntermediate("correct-horse-battery-staple");
 
             var pfx = ca.IssueClientCertificate("alice", "correct-horse-battery-staple", pfxPassword: "client-pw");
-            using var leaf = new X509Certificate2(pfx, "client-pw");
+            using var leaf = new X509Certificate2(pfx, "client-pw", X509KeyStorageFlags.EphemeralKeySet);
             using var intermediate = new X509Certificate2(ca.ExportIntermediateCertificate());
 
             Assert.Equal("alice", leaf.GetNameInfo(X509NameType.SimpleName, false));
@@ -63,7 +64,7 @@ namespace VirtualFido.Tests
             var ca = new CaManager(pkiRoot);
             ca.EnsureRootAndIntermediate("passphrase");
             var pfx = ca.IssueClientCertificate("alice", "passphrase", pfxPassword: null);
-            using var leaf = new X509Certificate2(pfx);
+            using var leaf = new X509Certificate2(pfx, (string?)null, X509KeyStorageFlags.EphemeralKeySet);
 
             Assert.False(RevocationStore.Load(pkiRoot).IsRevoked(leaf.SerialNumber));
 
@@ -84,6 +85,8 @@ namespace VirtualFido.Tests
             };
             var resolver = new UserDirectoryResolver(options, new UserKeyProtector(DataProtectionProvider.Create(new DirectoryInfo(NewTempDirectory()))));
 
+            using var aliceProtection = PasswordStorageProtection.Create(Path.Combine(secretsRoot, "alice"), "alice", "alice-password");
+            using var bobProtection = PasswordStorageProtection.Create(Path.Combine(secretsRoot, "bob"), "bob", "bob-password");
             var alice = resolver.BuildManagerFromPassword("alice", "alice-password");
             var bob = resolver.BuildManagerFromPassword("bob", "bob-password");
 

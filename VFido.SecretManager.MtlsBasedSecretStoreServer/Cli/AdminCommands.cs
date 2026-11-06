@@ -1,6 +1,6 @@
+using VFido.SecretManager.Protection;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
-using VFido.SecretManager.FileBasedSecretStore;
 using VFido.SecretManager.MtlsBasedSecretStoreServer.Pki;
 
 namespace VFido.SecretManager.MtlsBasedSecretStoreServer.Cli
@@ -133,8 +133,7 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer.Cli
                 // Establishes salt.bin/verifier.bin for this identity - the presence of verifier.bin
                 // is what IdentityResolutionFilter/UserDirectoryResolver use to tell a password user
                 // from a passwordless one.
-                _ = new VFido.SecretManager.FileBasedSecretStore.FileBasedSecretStore(
-                    Path.Combine(userDirectory, "keys"), username, loginPassword, Path.Combine(userDirectory, "certs"), userDirectory);
+                using var protection = PasswordStorageProtection.Create(userDirectory, username, loginPassword);
             }
 
             Console.Write("Client certificate PFX password (blank for none): ");

@@ -18,6 +18,7 @@ namespace VFido.SecretManager
         private readonly IPinStateStore? _pinState;
 
         private readonly bool _ownsKeyStore;
+        private readonly IDisposable? _ownedStorage;
         private bool _disposed;
 
         /// <summary>Captures local storage while credential, counter, and PIN writes are paused.</summary>
@@ -27,12 +28,13 @@ namespace VFido.SecretManager
             lock (_sync) { ThrowIfDisposed(); return capture(); }
         }
 
-        public Fido2SecretManager(IKeyStore keys, ICredentialStore credentials, IPinStateStore? pinState = null, bool ownsKeyStore = false)
+        public Fido2SecretManager(IKeyStore keys, ICredentialStore credentials, IPinStateStore? pinState = null, bool ownsKeyStore = false, IDisposable? ownedStorage = null)
         {
             _keys = keys;
             _credentials = credentials;
             _pinState = pinState ?? keys as IPinStateStore;
             _ownsKeyStore = ownsKeyStore;
+            _ownedStorage = ownedStorage;
         }
 
         public Task<byte[]> GetAaguidAsync()
@@ -168,7 +170,8 @@ namespace VFido.SecretManager
             {
                 if (_disposed) return;
                 _disposed = true;
-                if (_ownsKeyStore) (_keys as IDisposable)?.Dispose();
+                try { if (_ownsKeyStore) (_keys as IDisposable)?.Dispose(); }
+                finally { _ownedStorage?.Dispose(); }
             }
         }
         private StoredCredential RequireCredential(byte[] credentialId) =>

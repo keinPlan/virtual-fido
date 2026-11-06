@@ -28,6 +28,8 @@
             </StackPanel>
 
             <StackPanel x:Name="FilePanel" Spacing="12" IsVisible="False">
+                <CheckBox x:Name="FileEncryptCredentialsBox" IsChecked="True" Content="Encrypt credential metadata"/>
+                <TextBlock Text="If disabled, account metadata is readable and editable. Private keys and PIN state remain protected." Foreground="Gray" FontSize="11" TextWrapping="Wrap"/>
                 <StackPanel Spacing="4">
                     <TextBlock Text="Username"/>
                     <TextBox x:Name="FileUsernameBox"/>
@@ -72,6 +74,8 @@
             <StackPanel x:Name="TpmPanel" Spacing="12" IsVisible="False">
                 <TextBlock x:Name="TpmProvisionHint" Text="Import a master recovery PFX or create one below. Signing keys will be used inside this computer's TPM." Foreground="Gray" FontSize="12" TextWrapping="Wrap"/>
                 <StackPanel x:Name="TpmMetadataPanel" Spacing="12">
+                    <CheckBox x:Name="TpmEncryptCredentialsBox" IsChecked="True" Content="Encrypt credential metadata"/>
+                    <TextBlock Text="If disabled, account metadata is readable and editable. PIN state remains encrypted." Foreground="Gray" FontSize="11" TextWrapping="Wrap"/>
                     <StackPanel Spacing="4">
                         <TextBlock Text="Username"/>
                         <TextBox x:Name="TpmUsernameBox"/>
@@ -79,7 +83,7 @@
                     <StackPanel Spacing="4">
                         <TextBlock Text="Metadata password"/>
                         <TextBox x:Name="TpmMetadataPasswordBox" PasswordChar="*"/>
-                        <TextBlock Text="Encrypts account details and PIN state, and authorizes the TPM master. Enter it again when connecting or restoring. It is separate from the recovery PFX password and is never saved." Foreground="Gray" FontSize="11" TextWrapping="Wrap"/>
+                        <TextBlock Text="Protects PIN state, optionally encrypts account details, and authorizes the TPM master. Enter it again when connecting or restoring. It is separate from the recovery PFX password and is never saved." Foreground="Gray" FontSize="11" TextWrapping="Wrap"/>
                     </StackPanel>
                 </StackPanel>
                 <StackPanel Spacing="4">

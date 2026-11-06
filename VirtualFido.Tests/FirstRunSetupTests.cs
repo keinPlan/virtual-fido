@@ -41,7 +41,7 @@ public class FirstRunSetupTests
                 ["provider"] = "Memory", ["caPassword"] = "ca-passphrase-123", ["certificatePassword"] = "certificate-pass-123"
             });
             using var submitted = await client.SendAsync(create);
-            Assert.True(submitted.IsSuccessStatusCode);
+            Assert.True(submitted.IsSuccessStatusCode, $"{submitted.StatusCode}: {await submitted.Content.ReadAsStringAsync()}");
             Assert.Contains("Your server is configured", await submitted.Content.ReadAsStringAsync());
             Assert.NotEmpty(await client.GetByteArrayAsync(url + "/administrator.pfx"));
             Assert.NotEmpty(await client.GetByteArrayAsync(url + "/root.crt"));
@@ -58,9 +58,10 @@ public class FirstRunSetupTests
     }
 
     [Theory]
-    [InlineData("File")]
-    [InlineData("Memory")]
-    public void FreshInstallationCreatesCertificatesAdminAndPreservesConfiguration(string provider)
+    [InlineData("File", true)]
+    [InlineData("File", false)]
+    [InlineData("Memory", true)]
+    public void FreshInstallationCreatesCertificatesAdminAndPreservesConfiguration(string provider, bool encryptCredentials)
     {
         var root = Path.Combine(Path.GetTempPath(), "vfido-setup-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -71,7 +72,7 @@ public class FirstRunSetupTests
             var configuration = Path.Combine(root, "appsettings.json");
             File.WriteAllText(configuration, """{"Logging":{"LogLevel":{"Default":"Warning"}},"MtlsBasedSecretStoreServer":{"TokenLifetimeMinutes":42}}""");
             Assert.True(FirstRunSetup.IsFreshInstallation(options));
-            var request = new FirstRunSetup.SetupRequest("localhost", "admin", "ca-passphrase-123", "certificate-pass-123", provider, 5443);
+            var request = new FirstRunSetup.SetupRequest("localhost", "admin", "ca-passphrase-123", "certificate-pass-123", provider, 5443, EncryptCredentialFiles: encryptCredentials);
             var result = FirstRunSetup.Initialize(options, configuration, request);
 
             Assert.False(FirstRunSetup.IsFreshInstallation(options));
@@ -86,6 +87,8 @@ public class FirstRunSetupTests
             Assert.False(ca.HasPrivateKey);
             var json = JsonNode.Parse(File.ReadAllText(configuration))!;
             Assert.Equal(provider, json["MtlsBasedSecretStoreServer"]!["StorageProvider"]!.GetValue<string>());
+            Assert.Equal(encryptCredentials, options.EncryptCredentialFiles);
+            Assert.Equal(encryptCredentials, json["MtlsBasedSecretStoreServer"]!["EncryptCredentialFiles"]!.GetValue<bool>());
             Assert.Equal(42, json["MtlsBasedSecretStoreServer"]!["TokenLifetimeMinutes"]!.GetValue<int>());
             Assert.Equal("Warning", json["Logging"]!["LogLevel"]!["Default"]!.GetValue<string>());
             Assert.DoesNotContain(request.CaPassword, File.ReadAllText(configuration));

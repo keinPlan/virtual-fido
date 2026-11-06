@@ -1,3 +1,4 @@
+using VFido.SecretManager.Protection;
 using System.Security.Cryptography;
 using System.IO.Compression;
 using VFido.Gui.Configuration;
@@ -33,7 +34,7 @@ public static class TpmStickProvisioning
 
                 Extract the {config.Name} folder into your configured VFido directory while the stick is disconnected.
                 Keep the folder name and all files together. Avoid overwriting a newer stick: counters and PIN retry state reflect the time of this backup.
-                Connect using the original metadata username and password. This ZIP has no additional password; stored keys remain TPM-wrapped and metadata remains encrypted.
+                Connect using the original metadata username and password. This ZIP has no additional password; stored keys remain TPM-wrapped and PIN state remains encrypted. Credential metadata keeps the encryption setting from config.json.
 
                 master.json is deliberately excluded. Before connecting, use Edit > Restore master on this TPM with the original recovery PFX, its password, and the original metadata password, even on the original TPM.
                 The recovery PFX is stored separately and is not included by this export.
@@ -58,14 +59,14 @@ public static class TpmStickProvisioning
     }
 
     public static StickConfig Create(IStickConfigStore configs, string name, string serial,
-        string username, string metadataPassword, string pfxPath, string pfxPassword)
+        string username, string metadataPassword, string pfxPath, string pfxPassword, bool encryptCredentialFiles = true)
     {
         EnsureWindows();
         ArgumentException.ThrowIfNullOrWhiteSpace(username);
         ArgumentException.ThrowIfNullOrWhiteSpace(metadataPassword);
         using var master = ReadMaster(pfxPath, pfxPassword);
         var config = configs.Create(name, serial, new TpmSecretManagerConfig
-        { Username = username, MasterName = Convert.ToHexString(master.Name) });
+        { Username = username, MasterName = Convert.ToHexString(master.Name), EncryptCredentialFiles = encryptCredentialFiles });
         try
         {
             TpmBasedSecretStore.Provision(configs.GetKeyStoreDirectory(name), master, masterPassword: metadataPassword);
@@ -96,16 +97,22 @@ public static class TpmStickProvisioning
         if (!initializeMetadata && (!File.Exists(Path.Combine(authDirectory, "salt.bin")) || !File.Exists(Path.Combine(authDirectory, "verifier.bin"))))
             throw new InvalidDataException("Metadata authentication files are missing. Restore the complete stick folder before connecting.");
         // Check the metadata password before allocating TPM resources.
-        var credentials = new TpmBasedCredentialStore(configs.GetCredentialStoreDirectory(config.Name), username, password, authDirectory);
-        var pin = new FileBasedSecretStore(authDirectory, username, password, authDirectory: authDirectory);
-        var keys = new TpmBasedSecretStore(configs.GetKeyStoreDirectory(config.Name), masterPassword: password);
+        var protection = initializeMetadata
+            ? PasswordStorageProtection.Create(authDirectory, username, password)
+            : PasswordStorageProtection.Open(authDirectory, username, password);
+        TpmBasedSecretStore? keys = null;
         try
         {
+            var files = new EncryptedFileStorage(protection);
+            var credentials = new FileBasedCredentialStore(configs.GetCredentialStoreDirectory(config.Name),
+                settings.EncryptCredentialFiles ? files : new PlainFileStorage());
+            var pin = new FilePinStateStore(authDirectory, files);
+            keys = new TpmBasedSecretStore(configs.GetKeyStoreDirectory(config.Name), masterPassword: password);
             if (!string.Equals(Convert.ToHexString(keys.MasterName), settings.MasterName, StringComparison.OrdinalIgnoreCase))
                 throw new CryptographicException("The local TPM master does not match this stick. Restore its original recovery PFX from Edit.");
-            return new Fido2SecretManager(keys, credentials, pinState: pin, ownsKeyStore: true);
+            return new Fido2SecretManager(keys, credentials, pinState: pin, ownsKeyStore: true, ownedStorage: protection);
         }
-        catch { keys.Dispose(); throw; }
+        catch { keys?.Dispose(); protection.Dispose(); throw; }
     }
 
     /// <summary>Stage and validate every existing child before atomically replacing the local master.</summary>
@@ -121,8 +128,7 @@ public static class TpmStickProvisioning
         if (!File.Exists(Path.Combine(authDirectory, "salt.bin")) || !File.Exists(Path.Combine(authDirectory, "verifier.bin")))
             throw new InvalidDataException("Metadata authentication files are missing. Restore the complete stick folder first.");
         // Validate the original password before wrapping a replacement master with it.
-        _ = new TpmBasedCredentialStore(configs.GetCredentialStoreDirectory(config.Name), settings.Username,
-            metadataPassword, authDirectory);
+        using var protection = PasswordStorageProtection.Open(authDirectory, settings.Username, metadataPassword);
         var keys = Path.GetFullPath(configs.GetKeyStoreDirectory(config.Name));
         Directory.CreateDirectory(keys);
         var staging = Path.Combine(keys, ".restore-" + Guid.NewGuid().ToString("N"));

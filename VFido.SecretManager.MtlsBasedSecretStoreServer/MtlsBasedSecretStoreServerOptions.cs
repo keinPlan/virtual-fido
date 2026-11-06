@@ -3,6 +3,9 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer
     /// <summary>Bound from configuration section "MtlsBasedSecretStoreServer".</summary>
     public sealed class MtlsBasedSecretStoreServerOptions
     {
+        /// <summary>Encrypt .cred metadata files. Existing directories require explicit conversion before changing this.</summary>
+        public bool EncryptCredentialFiles { get; set; } = true;
+
         public int ListenPort { get; set; } = 5443;
 
         /// <summary>FIDO storage provider: File (default), Tpm, or Memory. Restart to change; existing credentials are not migrated.</summary>

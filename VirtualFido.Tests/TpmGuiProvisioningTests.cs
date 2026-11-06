@@ -4,6 +4,7 @@ using VFido.Gui.Configuration;
 using VFido.Gui.Services;
 using VFido.SecretManager;
 using VFido.SecretManager.MemoryBasedSecretStore;
+using VFido.SecretManager.Protection;
 using VFido.SecretManager.TpmBasedSecretStore;
 
 namespace VirtualFido.Tests;
@@ -60,8 +61,8 @@ public sealed class TpmGuiProvisioningTests : IClassFixture<TpmMasterFixture>, I
         var configs = new StickConfigStore(Path.Combine(_root, "sticks"));
         var config = configs.Create("TPM", "serial", new TpmSecretManagerConfig
         { Username = "alice", MasterName = Convert.ToHexString(_fixture.Master.Name) });
-        _ = new TpmBasedCredentialStore(configs.GetCredentialStoreDirectory(config.Name), "alice",
-            "metadata password", configs.GetStickDirectory(config.Name));
+        using var protection = PasswordStorageProtection.Create(configs.GetStickDirectory(config.Name),
+            "alice", "metadata password");
         var keys = configs.GetKeyStoreDirectory(config.Name);
         Directory.CreateDirectory(keys);
         var path = Path.Combine(keys, "master.json");

@@ -1,6 +1,6 @@
+using VFido.SecretManager.Protection;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using VFido.SecretManager.FileBasedSecretStore;
 
 namespace VFido.SecretManager.MtlsBasedSecretStoreServer.Pki
 {
@@ -10,7 +10,7 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer.Pki
     /// the admin CLI (init/create-user/revoke-user) - the running server never decrypts them, it only
     /// loads the already-issued public certs/PFXs those commands produced.
     ///
-    /// Private keys are protected with the exact same primitive <see cref="FileBasedSecretStore"/>
+    /// Private keys are protected with the exact same primitive <see cref="AesPayloadProtector"/>
     /// uses for per-user passwords (PBKDF2-SHA256 + AES-256-GCM + a known-plaintext verifier), just
     /// keyed off a standalone passphrase instead of a username+password pair - one crypto primitive
     /// for the whole server instead of two.
@@ -42,7 +42,7 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer.Pki
         /// <summary>Creates the root and intermediate CA if they don't already exist. Safe to call repeatedly - a no-op once initialized.</summary>
         public void EnsureRootAndIntermediate(string passphrase)
         {
-            var aesKey = DeriveAndVerifyPassphraseKey(passphrase);
+            using var protection = Unlock(passphrase);
 
             if (File.Exists(Path.Combine(_pkiRoot, RootCertFile)))
                 return;
@@ -50,12 +50,12 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer.Pki
             using var rootKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             var rootCertDer = CreateSelfSignedRoot(rootKey);
             File.WriteAllBytes(Path.Combine(_pkiRoot, RootCertFile), rootCertDer);
-            File.WriteAllBytes(Path.Combine(_pkiRoot, RootKeyFile), AesKeyProtector.Encrypt(aesKey, rootKey.ExportPkcs8PrivateKey()));
+            File.WriteAllBytes(Path.Combine(_pkiRoot, RootKeyFile), protection.Protect(rootKey.ExportPkcs8PrivateKey()));
 
             using var intermediateKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             var intermediateCertDer = CreateIntermediate(intermediateKey, rootKey, rootCertDer);
             File.WriteAllBytes(Path.Combine(_pkiRoot, IntermediateCertFile), intermediateCertDer);
-            File.WriteAllBytes(Path.Combine(_pkiRoot, IntermediateKeyFile), AesKeyProtector.Encrypt(aesKey, intermediateKey.ExportPkcs8PrivateKey()));
+            File.WriteAllBytes(Path.Combine(_pkiRoot, IntermediateKeyFile), protection.Protect(intermediateKey.ExportPkcs8PrivateKey()));
         }
 
         public byte[] ExportIntermediateCertificate() => File.ReadAllBytes(Path.Combine(_pkiRoot, IntermediateCertFile));
@@ -120,9 +120,9 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer.Pki
 
         private X509Certificate2 LoadIntermediate(string passphrase)
         {
-            var aesKey = DeriveAndVerifyPassphraseKey(passphrase);
+            using var protection = Unlock(passphrase);
             var certDer = File.ReadAllBytes(Path.Combine(_pkiRoot, IntermediateCertFile));
-            var keyPlaintext = AesKeyProtector.Decrypt(aesKey, File.ReadAllBytes(Path.Combine(_pkiRoot, IntermediateKeyFile)));
+            var keyPlaintext = protection.Unprotect(File.ReadAllBytes(Path.Combine(_pkiRoot, IntermediateKeyFile)));
 
             var ecdsa = ECDsa.Create();
             ecdsa.ImportPkcs8PrivateKey(keyPlaintext, out _);
@@ -130,26 +130,15 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer.Pki
             return cert.CopyWithPrivateKey(ecdsa);
         }
 
-        private byte[] DeriveAndVerifyPassphraseKey(string passphrase)
+        private AesPayloadProtector Unlock(string passphrase)
         {
-            const string saltFile = "salt.bin";
-            var saltPath = Path.Combine(_pkiRoot, saltFile);
-            var isNew = !File.Exists(saltPath);
-
-            byte[] salt;
-            if (isNew)
-            {
-                salt = RandomNumberGenerator.GetBytes(16);
-                File.WriteAllBytes(saltPath, salt);
-            }
-            else
-            {
-                salt = File.ReadAllBytes(saltPath);
-            }
-
-            var aesKey = AesKeyProtector.DeriveKey("ca", passphrase, salt);
-            PasswordVerifier.EnsureOrVerify(_pkiRoot, aesKey, isNew);
-            return aesKey;
+            var existing = File.Exists(Path.Combine(_pkiRoot, "salt.bin")) ||
+                File.Exists(Path.Combine(_pkiRoot, "verifier.bin")) ||
+                File.Exists(Path.Combine(_pkiRoot, RootKeyFile)) ||
+                File.Exists(Path.Combine(_pkiRoot, IntermediateKeyFile)) ||
+                File.Exists(Path.Combine(_pkiRoot, RootCertFile)) || File.Exists(Path.Combine(_pkiRoot, IntermediateCertFile));
+            return existing ? PasswordStorageProtection.Open(_pkiRoot, "ca", passphrase)
+                : PasswordStorageProtection.Create(_pkiRoot, "ca", passphrase);
         }
 
         private static byte[] CreateSelfSignedRoot(ECDsa rootKey)

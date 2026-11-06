@@ -1,3 +1,4 @@
+using VFido.SecretManager.Protection;
 using System.Security.Cryptography.X509Certificates;
 using NLog;
 using VFido.Core;
@@ -194,12 +195,16 @@ public sealed class StickManager : IStickManager
                     return null;
 
                 var (username, password) = credentials.Value;
-                // FileBasedSecretStore also implements IPinStateStore, persisting the PIN hash and
-                // retry counter alongside the signing keys it already protects in the same directory -
-                // Fido2SecretManager detects and forwards to it automatically.
-                var keyStore = new SecretManager.FileBasedSecretStore.FileBasedSecretStore(_configStore.GetKeyStoreDirectory(config.Name), username, password, _configStore.GetAttestationCertificateDirectory(config.Name), _configStore.GetStickDirectory(config.Name));
-                var credentialStore = new FileBasedCredentialStore(_configStore.GetCredentialStoreDirectory(config.Name), username, password, _configStore.GetStickDirectory(config.Name));
-                return new Fido2SecretManager(keyStore, credentialStore);
+                var directory = _configStore.GetStickDirectory(config.Name);
+                var protection = PasswordStorageProtection.Open(directory, username, password);
+                try
+                {
+                    var files = new EncryptedFileStorage(protection);
+                    var keyStore = new SecretManager.FileBasedSecretStore.FileBasedSecretStore(_configStore.GetKeyStoreDirectory(config.Name), files, _configStore.GetAttestationCertificateDirectory(config.Name), directory);
+                    var credentialStore = new FileBasedCredentialStore(_configStore.GetCredentialStoreDirectory(config.Name), fileConfig.EncryptCredentialFiles ? files : new PlainFileStorage());
+                    return new Fido2SecretManager(keyStore, credentialStore, new FilePinStateStore(directory, files), ownsKeyStore: true, ownedStorage: protection);
+                }
+                catch { protection.Dispose(); throw; }
             }
 
             case TpmSecretManagerConfig tpmConfig:

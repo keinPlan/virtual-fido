@@ -1,105 +1,94 @@
-using System.Security.Cryptography;
 using System.Text.Json;
+using VFido.SecretManager.Protection;
 
-namespace VFido.SecretManager.FileBasedSecretStore
+namespace VFido.SecretManager.FileBasedSecretStore;
+
+/// <summary>Credential serialization and lookup; payload protection is supplied independently.</summary>
+public class FileBasedCredentialStore : ICredentialStore, IDisposable
 {
-    /// <summary>
-    /// Persists credential registrations to disk, one file per credential, each AES-GCM encrypted
-    /// the same way FileBasedSecretStore protects its keys - living in a sibling "credentials"
-    /// folder next to FileBasedSecretStore's "keys" folder under a stick's own config directory,
-    /// but sharing FileBasedSecretStore's salt.bin/verifier.bin (both point <c>authDirectory</c> at
-    /// the stick's root directory) rather than keeping its own, so both stores derive the identical
-    /// AES key from one username+password and a wrong password is rejected consistently regardless
-    /// of which store opens first. Without this, a file-based-secret-manager stick would forget
-    /// which credentials it registered on every restart even though its signing keys survive.
-    /// </summary>
-    public class FileBasedCredentialStore : ICredentialStore
+    private const string FormatFile = "credential-format.json";
+    private readonly string _directory;
+    private readonly IFileStorage _files;
+    private IDisposable? _ownedProtection;
+
+    public FileBasedCredentialStore(string directory, IFileStorage files)
     {
-        private const int SaltSize = 16;
-        private const string SaltFileName = "salt.bin";
-        private const string CredentialFileExtension = ".cred";
-
-        private readonly string _directory;
-        private readonly string _authDirectory;
-        private readonly byte[] _aesKey;
-
-        public FileBasedCredentialStore(string directory, string username, string password, string? authDirectory = null)
+        _directory = directory;
+        _files = files;
+        Directory.CreateDirectory(directory);
+        var marker = Path.Combine(directory, FormatFile);
+        if (File.Exists(marker))
         {
-            _directory = directory;
-            Directory.CreateDirectory(_directory);
-
-            _authDirectory = authDirectory ?? directory;
-            Directory.CreateDirectory(_authDirectory);
-
-            var isNewStore = !File.Exists(Path.Combine(_authDirectory, SaltFileName));
-            var salt = LoadOrCreateSalt();
-            _aesKey = AesKeyProtector.DeriveKey(username, password, salt);
-
-            PasswordVerifier.EnsureOrVerify(_authDirectory, _aesKey, isNewStore);
+            var format = JsonSerializer.Deserialize<CredentialFormat>(File.ReadAllBytes(marker));
+            if (format is null || format.Version != 1 || format.Encrypted != files.Encrypted)
+                throw new InvalidDataException("Credential file format does not match configuration. Convert the credential directory explicitly before changing EncryptCredentialFiles.");
         }
-
-        /// <summary>Counterpart to <see cref="FileBasedSecretStore(string, byte[], string?, string?)"/> for passwordless identities - see its remarks.</summary>
-        public FileBasedCredentialStore(string directory, byte[] aesKey, string? authDirectory = null)
+        else
         {
-            _directory = directory;
-            Directory.CreateDirectory(_directory);
-
-            _authDirectory = authDirectory ?? directory;
-            Directory.CreateDirectory(_authDirectory);
-
-            _aesKey = aesKey;
+            // Unmarked directories containing .cred files are the legacy encrypted format.
+            if (!files.Encrypted && Directory.EnumerateFiles(directory, "*.cred").Any())
+                throw new InvalidDataException("Existing credential files require explicit conversion to plaintext.");
+            if (Directory.EnumerateFiles(directory, "*.cred").Any()) return;
+            AtomicFile.Write(marker, JsonSerializer.SerializeToUtf8Bytes(new CredentialFormat(1, files.Encrypted)));
         }
+    }
 
-        public void Save(StoredCredential credential)
+    // Source-compatible adapters; new callers unlock once and inject storage.
+    public FileBasedCredentialStore(string directory, string username, string password, string? authDirectory = null)
+        : this(directory, PasswordStorageProtection.OpenOrCreate(authDirectory ?? directory, username, password)) { }
+    public FileBasedCredentialStore(string directory, byte[] aesKey, string? authDirectory = null)
+        : this(directory, new AesPayloadProtector(aesKey)) { }
+    private FileBasedCredentialStore(string directory, AesPayloadProtector protector)
+        : this(directory, new EncryptedFileStorage(protector)) => _ownedProtection = protector;
+
+    public void Save(StoredCredential credential) =>
+        _files.Write(CredentialFilePath(credential.CredentialId), JsonSerializer.SerializeToUtf8Bytes(credential));
+    public StoredCredential? Find(byte[] credentialId)
+    {
+        var path = CredentialFilePath(credentialId);
+        return File.Exists(path) ? Decode(path) : null;
+    }
+    public IReadOnlyList<StoredCredential> FindByRp(string rpId) => FindAll().Where(c => c.RpId == rpId).ToList();
+    public IReadOnlyList<StoredCredential> FindAll() => Directory.EnumerateFiles(_directory, "*.cred").Select(Decode).ToList();
+    public void Delete(byte[] credentialId) => File.Delete(CredentialFilePath(credentialId));
+    private StoredCredential Decode(string path)
+    {
+        var credential = JsonSerializer.Deserialize<StoredCredential>(_files.Read(path))
+            ?? throw new InvalidDataException("Corrupt credential file: empty payload.");
+        if (credential.CredentialId is null || !string.Equals(Path.GetFileName(path),
+            Path.GetFileName(CredentialFilePath(credential.CredentialId)), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Credential ID does not match its filename.");
+        return credential;
+    }
+    private string CredentialFilePath(byte[] credentialId) => Path.Combine(_directory, Convert.ToHexString(credentialId) + ".cred");
+    public void Dispose() => _ownedProtection?.Dispose();
+    private sealed record CredentialFormat(int Version, bool Encrypted);
+
+    /// <summary>Exports a converted directory. The source is never replaced or modified.</summary>
+    public void ExportConverted(string destination, IFileStorage targetStorage)
+    {
+        destination = Path.GetFullPath(destination);
+        var sourceDirectory = Path.GetFullPath(_directory).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if ((destination + Path.DirectorySeparatorChar).StartsWith(sourceDirectory, StringComparison.OrdinalIgnoreCase))
+            throw new IOException("Conversion destination must be outside the source directory.");
+        if (Directory.Exists(destination) || File.Exists(destination))
+            throw new IOException("Conversion destination must not exist.");
+        var credentials = FindAll(); // Validate the complete source before writing anything.
+        var staging = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
         {
-            var plaintext = JsonSerializer.SerializeToUtf8Bytes(credential);
-            var encrypted = AesKeyProtector.Encrypt(_aesKey, plaintext);
-            File.WriteAllBytes(CredentialFilePath(credential.CredentialId), encrypted);
+            using var target = new FileBasedCredentialStore(staging, targetStorage);
+            foreach (var credential in credentials) target.Save(credential);
+            if (target.FindAll().Count != credentials.Count) throw new InvalidDataException("Incomplete conversion.");
+            Directory.Move(staging, destination);
         }
-
-        public StoredCredential? Find(byte[] credentialId)
+        finally
         {
-            var path = CredentialFilePath(credentialId);
-            if (!File.Exists(path))
-                return null;
-
-            return Decode(File.ReadAllBytes(path));
-        }
-
-        public IReadOnlyList<StoredCredential> FindByRp(string rpId) =>
-            FindAll().Where(c => c.RpId == rpId).ToList();
-
-        public IReadOnlyList<StoredCredential> FindAll() =>
-            Directory.EnumerateFiles(_directory, "*" + CredentialFileExtension)
-                .Select(path => Decode(File.ReadAllBytes(path)))
-                .ToList();
-
-        public void Delete(byte[] credentialId)
-        {
-            var path = CredentialFilePath(credentialId);
-            if (File.Exists(path))
-                File.Delete(path);
-        }
-
-        private StoredCredential Decode(byte[] encrypted)
-        {
-            var plaintext = AesKeyProtector.Decrypt(_aesKey, encrypted);
-            return JsonSerializer.Deserialize<StoredCredential>(plaintext)
-                ?? throw new InvalidOperationException("Corrupt credential file: empty payload.");
-        }
-
-        private string CredentialFilePath(byte[] credentialId) =>
-            Path.Combine(_directory, Convert.ToHexString(credentialId) + CredentialFileExtension);
-
-        private byte[] LoadOrCreateSalt()
-        {
-            var saltPath = Path.Combine(_authDirectory, SaltFileName);
-            if (File.Exists(saltPath))
-                return File.ReadAllBytes(saltPath);
-
-            var salt = RandomNumberGenerator.GetBytes(SaltSize);
-            File.WriteAllBytes(saltPath, salt);
-            return salt;
+            if (Directory.Exists(staging))
+            {
+                foreach (var file in Directory.EnumerateFiles(staging)) File.Delete(file);
+                Directory.Delete(staging);
+            }
         }
     }
 }

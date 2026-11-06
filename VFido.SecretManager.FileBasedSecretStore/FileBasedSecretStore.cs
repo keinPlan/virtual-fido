@@ -1,22 +1,16 @@
+using VFido.SecretManager.Protection;
 using System.Security.Cryptography;
 using VFido.SecretManager.Crypto;
 
 namespace VFido.SecretManager.FileBasedSecretStore
 {
     /// <summary>
-    /// Persists P-256 keys to disk, one file per key, each AES-GCM encrypted with a key derived
-    /// via PBKDF2(username, password, salt). The salt is generated once per stick and kept in
-    /// plaintext under <see cref="_authDirectory"/> (shared with <see cref="FileBasedCredentialStore"/>)
-    /// - it isn't secret, only the username and password (never persisted) are. Losing either makes
-    /// every key file permanently unrecoverable, matching the TPM-backed stores this seam is meant
-    /// to also support.
+    /// P-256 key persistence and attestation. Payload protection is injected through IFileStorage.
+    /// Legacy password constructors and PIN methods remain as compatibility adapters.
     /// </summary>
-    public class FileBasedSecretStore : IKeyStore, IPinStateStore, ICredentialKeyTransfer
+    public class FileBasedSecretStore : IKeyStore, IPinStateStore, ICredentialKeyTransfer, IDisposable
     {
-        private const int SaltSize = 16;
-        private const string SaltFileName = "salt.bin";
         private const string KeyFileExtension = ".key";
-        private const string PinStateFileName = "pin.bin";
         private const string AttestationKeyFileName = "attestation.key";
         private const string AttestationCertFileName = "attestation.crt";
         private const string AttestationIntermediateKeyFileName = "attestation-intermediate.key";
@@ -30,7 +24,9 @@ namespace VFido.SecretManager.FileBasedSecretStore
         private readonly string _directory;
         private readonly string _attestationDirectory;
         private readonly string _authDirectory;
-        private readonly byte[] _aesKey;
+        private readonly IFileStorage _files;
+        private readonly FilePinStateStore _pin;
+        private IDisposable? _ownedProtection;
 
         // Guid.ToByteArray() emits .NET's native mixed-endian layout (first three fields
         // little-endian), which scrambles the hyphenated hex an RP displays for the AAGUID field -
@@ -43,44 +39,28 @@ namespace VFido.SecretManager.FileBasedSecretStore
         /// username+password, instead of each keeping its own salt.
         /// </param>
         public FileBasedSecretStore(string directory, string username, string password, string? attestationDirectory = null, string? authDirectory = null)
-        {
-            _directory = directory;
-            Directory.CreateDirectory(_directory);
+            : this(directory, PasswordStorageProtection.OpenOrCreate(authDirectory ?? directory, username, password), attestationDirectory, authDirectory) { }
 
-            _attestationDirectory = attestationDirectory ?? directory;
-            Directory.CreateDirectory(_attestationDirectory);
-
-            _authDirectory = authDirectory ?? directory;
-            Directory.CreateDirectory(_authDirectory);
-
-            var isNewStore = !File.Exists(Path.Combine(_authDirectory, SaltFileName));
-            var salt = LoadOrCreateSalt();
-            _aesKey = AesKeyProtector.DeriveKey(username, password, salt);
-
-            PasswordVerifier.EnsureOrVerify(_authDirectory, _aesKey, isNewStore);
-        }
-
-        /// <summary>
-        /// For identities with no login password (the key comes from elsewhere - e.g. a
-        /// Data-Protection-wrapped random key) there's no username/password to derive from or
-        /// verify against; the caller already owns the trust decision for <paramref name="aesKey"/>.
-        /// </summary>
         public FileBasedSecretStore(string directory, byte[] aesKey, string? attestationDirectory = null, string? authDirectory = null)
+            : this(directory, new AesPayloadProtector(aesKey), attestationDirectory, authDirectory) { }
+
+        private FileBasedSecretStore(string directory, AesPayloadProtector protector, string? attestationDirectory, string? authDirectory)
+            : this(directory, new EncryptedFileStorage(protector), attestationDirectory, authDirectory) => _ownedProtection = protector;
+
+        public FileBasedSecretStore(string directory, IFileStorage files, string? attestationDirectory = null, string? authDirectory = null)
         {
+            if (!files.Encrypted) throw new ArgumentException("Private keys require protected storage.", nameof(files));
             _directory = directory;
-            Directory.CreateDirectory(_directory);
-
             _attestationDirectory = attestationDirectory ?? directory;
-            Directory.CreateDirectory(_attestationDirectory);
-
             _authDirectory = authDirectory ?? directory;
-            Directory.CreateDirectory(_authDirectory);
-
-            _aesKey = aesKey;
+            Directory.CreateDirectory(_directory);
+            Directory.CreateDirectory(_attestationDirectory);
+            _files = files;
+            _pin = new FilePinStateStore(_authDirectory, files);
         }
 
         public byte[] ExportPkcs8(byte[] handle) =>
-            AesKeyProtector.Decrypt(_aesKey, File.ReadAllBytes(KeyFilePath(new Guid(handle))));
+            _files.Read(KeyFilePath(new Guid(handle)));
 
         public byte[] ImportPkcs8(byte[] privateKey)
         {
@@ -90,7 +70,7 @@ namespace VFido.SecretManager.FileBasedSecretStore
                 throw new InvalidDataException("Only P-256 private keys are supported.");
             var keyId = Guid.NewGuid();
             var path = KeyFilePath(keyId);
-            try { File.WriteAllBytes(path, AesKeyProtector.Encrypt(_aesKey, privateKey)); }
+            try { _files.Write(path, privateKey); }
             catch { File.Delete(path); throw; }
             return keyId.ToByteArray();
         }
@@ -101,8 +81,7 @@ namespace VFido.SecretManager.FileBasedSecretStore
             var keyId = Guid.NewGuid();
 
             var plaintext = ecdsa.ExportPkcs8PrivateKey();
-            var encrypted = AesKeyProtector.Encrypt(_aesKey, plaintext);
-            File.WriteAllBytes(KeyFilePath(keyId), encrypted);
+            _files.Write(KeyFilePath(keyId), plaintext);
 
             return new FileBasedSigningKey(ecdsa, keyId);
         }
@@ -110,8 +89,7 @@ namespace VFido.SecretManager.FileBasedSecretStore
         public ISigningKey LoadKey(byte[] handle)
         {
             var keyId = new Guid(handle);
-            var encrypted = File.ReadAllBytes(KeyFilePath(keyId));
-            var plaintext = AesKeyProtector.Decrypt(_aesKey, encrypted);
+            var plaintext = _files.Read(KeyFilePath(keyId));
 
             var ecdsa = ECDsa.Create();
             ecdsa.ImportPkcs8PrivateKey(plaintext, out _);
@@ -138,7 +116,7 @@ namespace VFido.SecretManager.FileBasedSecretStore
             var leafKey = Crypto.EcdsaProvider.GenerateP256();
             var leafCertDer = AttestationCertificateFactory.CreateAttestationLeaf(leafKey, intermediateKey, intermediateCertDer, Aaguid);
 
-            File.WriteAllBytes(leafKeyPath, AesKeyProtector.Encrypt(_aesKey, leafKey.ExportPkcs8PrivateKey()));
+            _files.Write(leafKeyPath, leafKey.ExportPkcs8PrivateKey());
             File.WriteAllBytes(leafCertPath, leafCertDer);
 
             return new AttestationCertificate(AttestationKeyHandle, new[] { leafCertDer, intermediateCertDer });
@@ -156,7 +134,7 @@ namespace VFido.SecretManager.FileBasedSecretStore
             var intermediateKey = Crypto.EcdsaProvider.GenerateP256();
             var intermediateCertDer = AttestationCertificateFactory.CreateIntermediate(intermediateKey, rootKey, rootCertDer);
 
-            File.WriteAllBytes(Path.Combine(_attestationDirectory, AttestationIntermediateKeyFileName), AesKeyProtector.Encrypt(_aesKey, intermediateKey.ExportPkcs8PrivateKey()));
+            _files.Write(Path.Combine(_attestationDirectory, AttestationIntermediateKeyFileName), intermediateKey.ExportPkcs8PrivateKey());
             File.WriteAllBytes(intermediateCertPath, intermediateCertDer);
 
             return intermediateCertDer;
@@ -171,7 +149,7 @@ namespace VFido.SecretManager.FileBasedSecretStore
             var rootKey = Crypto.EcdsaProvider.GenerateP256();
             var rootCertDer = AttestationCertificateFactory.CreateSelfSignedRoot(rootKey);
 
-            File.WriteAllBytes(Path.Combine(_attestationDirectory, AttestationRootKeyFileName), AesKeyProtector.Encrypt(_aesKey, rootKey.ExportPkcs8PrivateKey()));
+            _files.Write(Path.Combine(_attestationDirectory, AttestationRootKeyFileName), rootKey.ExportPkcs8PrivateKey());
             File.WriteAllBytes(rootCertPath, rootCertDer);
 
             return rootCertDer;
@@ -179,7 +157,7 @@ namespace VFido.SecretManager.FileBasedSecretStore
 
         private ECDsa LoadPrivateKey(string path)
         {
-            var plaintext = AesKeyProtector.Decrypt(_aesKey, File.ReadAllBytes(path));
+            var plaintext = _files.Read(path);
             var ecdsa = ECDsa.Create();
             ecdsa.ImportPkcs8PrivateKey(plaintext, out _);
             return ecdsa;
@@ -193,22 +171,10 @@ namespace VFido.SecretManager.FileBasedSecretStore
         private static readonly Guid AttestationKeyGuid = new("00000000-0000-0000-0000-000000000001");
         private static byte[] AttestationKeyHandle => AttestationKeyGuid.ToByteArray();
 
-        public PinState? Load()
-        {
-            var path = Path.Combine(_authDirectory, PinStateFileName);
-            if (!File.Exists(path))
-                return null;
-
-            var plaintext = AesKeyProtector.Decrypt(_aesKey, File.ReadAllBytes(path));
-            return System.Text.Json.JsonSerializer.Deserialize<PinState>(plaintext);
-        }
-
-        public void Save(PinState state)
-        {
-            var plaintext = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(state);
-            var encrypted = AesKeyProtector.Encrypt(_aesKey, plaintext);
-            File.WriteAllBytes(Path.Combine(_authDirectory, PinStateFileName), encrypted);
-        }
+        // Compatibility for callers using the original combined key/PIN store.
+        public PinState? Load() => _pin.Load();
+        public void Save(PinState state) => _pin.Save(state);
+        public void Dispose() => _ownedProtection?.Dispose();
 
         public void DeleteKey(byte[] handle)
         {
@@ -221,15 +187,5 @@ namespace VFido.SecretManager.FileBasedSecretStore
             ? Path.Combine(_attestationDirectory, AttestationKeyFileName)
             : Path.Combine(_directory, keyId + KeyFileExtension);
 
-        private byte[] LoadOrCreateSalt()
-        {
-            var saltPath = Path.Combine(_authDirectory, SaltFileName);
-            if (File.Exists(saltPath))
-                return File.ReadAllBytes(saltPath);
-
-            var salt = RandomNumberGenerator.GetBytes(SaltSize);
-            File.WriteAllBytes(saltPath, salt);
-            return salt;
-        }
     }
 }

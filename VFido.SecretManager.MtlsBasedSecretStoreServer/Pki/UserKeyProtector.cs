@@ -25,6 +25,9 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer.Pki
             if (File.Exists(path))
                 return Convert.FromBase64String(_protector.Unprotect(File.ReadAllText(path)));
 
+            if (Directory.EnumerateFiles(userDirectory, "*", SearchOption.AllDirectories).Any(p =>
+                Path.GetExtension(p) is ".cred" or ".key" || Path.GetFileName(p) is "pin.bin" or "salt.bin" or "verifier.bin"))
+                throw new InvalidDataException("Wrapped storage key is missing. Restore the complete backup.");
             var key = RandomNumberGenerator.GetBytes(32);
             File.WriteAllText(path, _protector.Protect(Convert.ToBase64String(key)));
             return key;

@@ -28,6 +28,7 @@ public sealed class MemorySecretManagerConfig : SecretManagerConfig
 /// </summary>
 public sealed class FileSecretManagerConfig : SecretManagerConfig
 {
+    public bool EncryptCredentialFiles { get; set; } = true;
     public required string Username { get; set; }
 }
 
@@ -55,6 +56,7 @@ public sealed class MtlsSecretManagerConfig : SecretManagerConfig
 /// <summary>TPM-wrapped keys, with password-encrypted credential metadata and PIN state.</summary>
 public sealed class TpmSecretManagerConfig : SecretManagerConfig
 {
+    public bool EncryptCredentialFiles { get; set; } = true;
     public required string Username { get; set; }
     public required string MasterName { get; set; }
 }

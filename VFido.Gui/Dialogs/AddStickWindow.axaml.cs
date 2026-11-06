@@ -1,3 +1,4 @@
+using VFido.SecretManager.Protection;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Avalonia.Controls;
@@ -68,6 +69,8 @@ public partial class AddStickWindow : Window
             window.TpmUsernameBox.IsReadOnly = true;
         }
         window.TpmCreateMasterButton.IsVisible = false;
+        window.TpmEncryptCredentialsBox.IsEnabled = false;
+        window.TpmEncryptCredentialsBox.IsChecked = (existing.SecretManager as TpmSecretManagerConfig)?.EncryptCredentialFiles ?? true;
         window.TpmRestoreButton.IsVisible = existing.SecretManager is TpmSecretManagerConfig;
         window.TpmRestoreButton.IsEnabled = !stickManager.IsConnected(existing.Name);
         window.TpmDeletePrimaryButton.IsVisible = existing.SecretManager is TpmSecretManagerConfig;
@@ -196,7 +199,7 @@ public partial class AddStickWindow : Window
                     ShowError("Username and password are required for a file-based secret manager.");
                     return;
                 }
-                secretManager = new FileSecretManagerConfig { Username = FileUsernameBox.Text };
+                secretManager = new FileSecretManagerConfig { Username = FileUsernameBox.Text, EncryptCredentialFiles = FileEncryptCredentialsBox.IsChecked != false };
                 filePassword = FilePasswordBox.Text;
                 break;
 
@@ -263,8 +266,9 @@ public partial class AddStickWindow : Window
             // way, so this is purely about not losing the moment the user has it in mind.
             if (filePassword != null)
             {
-                _ = new FileBasedSecretStore(_configStore.GetKeyStoreDirectory(_result.Name), FileUsernameBox.Text!, filePassword, _configStore.GetAttestationCertificateDirectory(_result.Name), _configStore.GetStickDirectory(_result.Name));
-                _ = new FileBasedCredentialStore(_configStore.GetCredentialStoreDirectory(_result.Name), FileUsernameBox.Text!, filePassword, _configStore.GetStickDirectory(_result.Name));
+                using var protection = PasswordStorageProtection.Create(_configStore.GetStickDirectory(_result.Name), FileUsernameBox.Text!, filePassword);
+                using var credentials = new FileBasedCredentialStore(_configStore.GetCredentialStoreDirectory(_result.Name),
+                    ((FileSecretManagerConfig)secretManager).EncryptCredentialFiles ? new EncryptedFileStorage(protection) : new PlainFileStorage());
             }
 
             // Now that the connection has already been verified against these exact files, copy
@@ -323,10 +327,11 @@ public partial class AddStickWindow : Window
         var metadataPassword = TpmMetadataPasswordBox.Text;
         var pfxPath = TpmPfxPathBox.Text;
         var pfxPassword = TpmPfxPasswordBox.Text;
+        var encryptCredentials = TpmEncryptCredentialsBox.IsChecked != false;
         SetTpmBusy(true, "Provisioning and testing TPM signing...");
         try
         {
-            _result = await Task.Run(() => TpmStickProvisioning.Create(_configStore!, name, serial, username, metadataPassword, pfxPath, pfxPassword));
+            _result = await Task.Run(() => TpmStickProvisioning.Create(_configStore!, name, serial, username, metadataPassword, pfxPath, pfxPassword, encryptCredentials));
         }
         catch (Exception ex) { ShowError($"TPM setup failed: {ex.Message}"); }
         finally { SetTpmBusy(false); }

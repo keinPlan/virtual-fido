@@ -21,6 +21,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VFido.SecretManager.MtlsBas
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VFido.SecretManager.TpmBasedSecretStore", "VFido.SecretManager.TpmBasedSecretStore\VFido.SecretManager.TpmBasedSecretStore.csproj", "{6219A424-07B6-472B-87D7-05BBAADC001C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VFido.SecretManager.Protection", "VFido.SecretManager.Protection\VFido.SecretManager.Protection.csproj", "{274EE181-2AD8-490C-A9E8-9BA7D2C0E930}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -139,6 +141,18 @@ Global
 		{6219A424-07B6-472B-87D7-05BBAADC001C}.Release|x64.Build.0 = Release|Any CPU
 		{6219A424-07B6-472B-87D7-05BBAADC001C}.Release|x86.ActiveCfg = Release|Any CPU
 		{6219A424-07B6-472B-87D7-05BBAADC001C}.Release|x86.Build.0 = Release|Any CPU
+		{274EE181-2AD8-490C-A9E8-9BA7D2C0E930}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{274EE181-2AD8-490C-A9E8-9BA7D2C0E930}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{274EE181-2AD8-490C-A9E8-9BA7D2C0E930}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{274EE181-2AD8-490C-A9E8-9BA7D2C0E930}.Debug|x64.Build.0 = Debug|Any CPU
+		{274EE181-2AD8-490C-A9E8-9BA7D2C0E930}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{274EE181-2AD8-490C-A9E8-9BA7D2C0E930}.Debug|x86.Build.0 = Debug|Any CPU
+		{274EE181-2AD8-490C-A9E8-9BA7D2C0E930}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{274EE181-2AD8-490C-A9E8-9BA7D2C0E930}.Release|Any CPU.Build.0 = Release|Any CPU
+		{274EE181-2AD8-490C-A9E8-9BA7D2C0E930}.Release|x64.ActiveCfg = Release|Any CPU
+		{274EE181-2AD8-490C-A9E8-9BA7D2C0E930}.Release|x64.Build.0 = Release|Any CPU
+		{274EE181-2AD8-490C-A9E8-9BA7D2C0E930}.Release|x86.ActiveCfg = Release|Any CPU
+		{274EE181-2AD8-490C-A9E8-9BA7D2C0E930}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

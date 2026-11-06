@@ -1,3 +1,4 @@
+using VFido.SecretManager.Protection;
 using Microsoft.AspNetCore.DataProtection;
 using VFido.SecretManager.FileBasedSecretStore;
 using VFido.SecretManager.MtlsBasedSecretStoreServer;
@@ -22,6 +23,10 @@ public class ServerStorageTests
                 SecretsRootPath = root, StorageProvider = ServerStorageProvider.Memory
             };
             var protector = new UserKeyProtector(DataProtectionProvider.Create(new DirectoryInfo(Path.Combine(root, "protection"))));
+            if (!passwordless)
+            {
+                using var initialized = PasswordStorageProtection.Create(Path.Combine(root, "alice"), "alice", "password");
+            }
             using var resolver = new UserDirectoryResolver(options, protector);
             var manager = passwordless ? resolver.BuildPasswordlessManager("alice")
                 : resolver.BuildManagerFromPassword("alice", "password");

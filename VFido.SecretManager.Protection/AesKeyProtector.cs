@@ -1,14 +1,14 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace VFido.SecretManager.FileBasedSecretStore
+namespace VFido.SecretManager.Protection
 {
     /// <summary>
     /// Derives an AES-256 key from username+password+salt via PBKDF2, then wraps/unwraps key
     /// blobs with AES-GCM. The derived key never touches disk - only the salt does - so a stolen
     /// key file is useless without the matching username/password.
     /// </summary>
-    internal static class AesKeyProtector
+    public static class AesKeyProtector
     {
         private const int KeySize = 32;
         private const int NonceSize = 12;
@@ -37,6 +37,7 @@ namespace VFido.SecretManager.FileBasedSecretStore
 
         public static byte[] Decrypt(byte[] aesKey, byte[] blob)
         {
+            if (blob.Length < NonceSize + TagSize) throw new CryptographicException("Truncated encrypted payload.");
             var nonce = blob[..NonceSize];
             var tag = blob[NonceSize..(NonceSize + TagSize)];
             var ciphertext = blob[(NonceSize + TagSize)..];

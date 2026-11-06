@@ -8,8 +8,8 @@ Set `MtlsBasedSecretStoreServer.StorageProvider` in `appsettings.json` to `File`
 
 | Provider | Private keys | Credential metadata / PIN state |
 | --- | --- | --- |
-| File | AES-encrypted files in each user's `keys` directory | Encrypted files |
-| Tpm | TPM-wrapped files in each user's `keys` directory; signing runs in the local TPM | Encrypted metadata in `credentials`; encrypted PIN state |
+| File | AES-encrypted files in each user's `keys` directory | Configurable credential encryption; encrypted PIN state |
+| Tpm | TPM-wrapped files in each user's `keys` directory; signing runs in the local TPM | Configurable credential encryption; encrypted PIN state |
 | Memory | Process memory | Process memory; lost when the server stops |
 
 All modes retain the existing mTLS and optional login password requirements. Memory mode shares a user's credentials across sessions for the lifetime of the server; certificates, login verifiers, and server PKI still use disk storage.
@@ -25,3 +25,23 @@ Keep the recovery PFX and its password offline, and back up the PKI/keyring and 
 Changing the provider does not migrate or delete existing credentials. File and TPM now use the same `keys` and `credentials` paths, but their key formats differ: switching providers for existing credentials requires migration. Memory credentials disappear at shutdown. This setting controls FIDO keys, not TLS/CA certificates or ASP.NET Data Protection keys.
 
 The management dashboard counts credentials for the selected provider.
+
+## Credential file encryption
+
+`MtlsBasedSecretStoreServer.EncryptCredentialFiles` defaults to `true`, including when the setting is absent. First-run setup lets you select encrypted credential metadata or readable JSON. This setting applies to `.cred` files for both File and TPM providers; Memory does not persist credentials. Private keys and PIN state always retain their protection, and login password checks still run even when credentials are plaintext.
+
+Plaintext `.cred` files expose RP IDs, usernames, user IDs, key handles, and signature counters. They have no cryptographic tamper detection. Protect access to their directory and backups accordingly.
+
+New credential directories contain `credential-format.json`, which records the selected mode. Existing unmarked directories are treated as the original encrypted format. A mismatch is rejected; decryption errors never fall back to reading plaintext. Keep this marker with the credential files when backing up or restoring.
+
+Changing `EncryptCredentialFiles` does not rewrite existing files. Existing credential directories must match the selected mode before the server starts using them.
+
+## Code boundaries
+
+`VFido.SecretManager.Protection` owns payload encryption and password unlocking. `PasswordStorageProtection.Create` provisions authentication metadata; `Open` verifies existing metadata without recreating missing files. `AesPayloadProtector` preserves the original PBKDF2 and AES-GCM format and owns a disposable copy of the unlocked key.
+
+`FileBasedCredentialStore` accepts `IFileStorage`, selecting `PlainFileStorage` or `EncryptedFileStorage` in the composition code. The file layer performs atomic replacement; stores own serialization, filenames, and domain operations. `FilePinStateStore` is independent of the signing-key store. Server and GUI composition unlock once and share protection for the lifetime of their manager. TPM object wrapping and signing remain in the TPM backend. CA protection uses the protection project directly.
+
+Older password/key constructors remain for source compatibility; new composition uses injected storage. File and TPM providers share `FileBasedCredentialStore`. The old combined key/PIN interface delegates to `FilePinStateStore`. Missing authentication metadata is now an error on open and must be restored from backup.
+
+Local GUI File and TPM sticks have the same `EncryptCredentialFiles` option under their secret-manager configuration, defaulting to `true`. The Add stick dialog exposes it for new sticks. Changing an existing stick requires an explicit converted directory (the `FileBasedCredentialStore.ExportConverted` API), followed by replacing the directory and updating its configuration while disconnected. The edit dialog does not silently convert existing files.

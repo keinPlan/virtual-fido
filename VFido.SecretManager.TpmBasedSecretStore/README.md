@@ -36,17 +36,24 @@ In **Credentials**, use the normal **Export TPM backup ZIP** button to export al
 
 ```csharp
 using VFido.SecretManager.TpmBasedSecretStore;
+using VFido.SecretManager.FileBasedSecretStore;
+using VFido.SecretManager.Protection;
 
 using (var master = TpmMasterKey.Generate())
 {
     File.WriteAllBytes("recovery.pfx", master.ExportPfx(recoveryPassword));
     TpmBasedSecretStore.Provision(keyDirectory, master, masterPassword: storePassword);
+    // Provision metadata authentication once alongside the TPM master.
+    using var initializedProtection = PasswordStorageProtection.Create(authDirectory, username, metadataPassword);
 }
 
 // Subsequent starts need only the local TPM-wrapped master.
 using var keys = new TpmBasedSecretStore(keyDirectory, masterPassword: storePassword);
-var metadata = new TpmBasedCredentialStore(metadataDirectory, username, metadataPassword);
-var manager = new Fido2SecretManager(keys, metadata);
+using var protection = PasswordStorageProtection.Open(authDirectory, username, metadataPassword);
+var files = new EncryptedFileStorage(protection);
+using var metadata = new FileBasedCredentialStore(metadataDirectory, files);
+var pin = new FilePinStateStore(authDirectory, files);
+using var manager = new Fido2SecretManager(keys, metadata, pin);
 ```
 
 For an existing RSA-2048 key, use `TpmMasterKey.FromExternal(rsa, seed)` with a cryptographically random 32-byte seed. RSA exponent 65537 is required. Input material remains caller-owned; clear or dispose it when finished.
@@ -77,6 +84,6 @@ The GUI supports TPM setup under **Add stick > TPM 2.0 (Windows)**. Choose an ex
 
 For recovery, copy the complete stick folder into the configured VFido directory, disconnect the stick, open **Edit**, select the original PFX, enter its password and the original metadata password, and use **Restore master on this TPM**. Recovery checks the configured master identity and loads every existing wrapped credential under a staged master before atomically replacing `keys/master.json`. Wrong passwords, different masters, and wrong seeds leave existing key files intact. Keep `config.json`, credentials, wrapped keys, `pin.bin`, `salt.bin`, and `verifier.bin` together when backing up. The GUI uses the default Windows owner authorization; custom owner authorization is currently available only through the backend API.
 
-`TpmBasedCredentialStore` reuses encrypted file metadata. `Fido2SecretManager` can accept an explicit PIN store and opt into owning/disposal of the key store, which the GUI does on connection. Standalone users still own their key store unless they pass `ownsKeyStore: true`. Attestation provisions an external ephemeral root/intermediate and imports its leaf private key; only the leaf/intermediate public certificates are retained. This is local packed attestation, not a manufacturer TPM attestation certificate.
+Credential metadata uses `FileBasedCredentialStore` with injected `EncryptedFileStorage` or `PlainFileStorage`; it has no TPM-specific store. `Fido2SecretManager` can accept an explicit PIN store and opt into owning/disposal of the key store, which the GUI does on connection. Standalone users still own their key store unless they pass `ownsKeyStore: true`. Attestation provisions an external ephemeral root/intermediate and imports its leaf private key; only the leaf/intermediate public certificates are retained. This is local packed attestation, not a manufacturer TPM attestation certificate.
 
 GUI provisioning and recovery service tests are included in `TpmGuiProvisioningTests`, with local TPM tests enabled by the same environment flag. Run software tests with `dotnet test VirtualFido.Tests`. To exercise the local Windows TPM, set `VFIDO_TEST_TPM=1` and run `dotnet test VirtualFido.Tests --filter FullyQualifiedName~TpmSecretStoreIntegrationTests`. This creates temporary test directories and TPM objects, and may leave the shared persistent primary cache described above. It checks PFX-based master recovery, signing, restart, unchanged wrapped-key recovery, attestation, deletion, and wrong-seed rejection on the same TPM. A second independent physical TPM or simulator is still needed to validate cross-device compatibility.

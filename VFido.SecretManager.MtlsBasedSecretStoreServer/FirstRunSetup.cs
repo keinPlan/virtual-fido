@@ -72,7 +72,7 @@ public static class FirstRunSetup
             var request = new SetupRequest(form["hostname"].ToString(), form["username"].ToString(),
                 form["caPassword"].ToString(), form["certificatePassword"].ToString(),
                 form["provider"].ToString(), int.TryParse(form["port"], out var port) ? port : 0,
-                form["recoveryPassword"].ToString());
+                form["recoveryPassword"].ToString(), EncryptCredentialFiles: form["encryptCredentialFiles"] != "false");
             var upload = form.Files.GetFile("recoveryPfx");
             if (request.Provider.Equals("Tpm", StringComparison.OrdinalIgnoreCase) && upload is { Length: > 0 })
             {
@@ -138,7 +138,7 @@ public static class FirstRunSetup
     }
 
     public sealed record SetupRequest(string Hostname, string Username, string CaPassword,
-        string CertificatePassword, string Provider, int Port, string? RecoveryPassword = null, byte[]? RecoveryPfx = null);
+        string CertificatePassword, string Provider, int Port, string? RecoveryPassword = null, byte[]? RecoveryPfx = null, bool EncryptCredentialFiles = true);
     public sealed record SetupResult(byte[] AdminPfx, byte[] RootCertificate);
 
     public static string? Validate(SetupRequest request)
@@ -201,6 +201,8 @@ public static class FirstRunSetup
         options.ListenPort = request.Port;
         section["ListenPort"] = options.ListenPort;
         section["StorageProvider"] = options.StorageProvider.ToString();
+        options.EncryptCredentialFiles = request.EncryptCredentialFiles;
+        section["EncryptCredentialFiles"] = options.EncryptCredentialFiles;
         section["ServerCertificatePath"] = options.ServerCertificatePath;
         section["ClientCaCertificatePath"] = options.ClientCaCertificatePath;
         section["PkiRootPath"] = options.PkiRootPath;
@@ -235,6 +237,7 @@ public static class FirstRunSetup
         <form method="post" action="{{prefix}}" enctype="multipart/form-data">
         <label for="hostname">Server DNS name or IP address</label><input id="hostname" name="hostname" value="localhost" required maxlength="253">
         <label for="port">HTTPS port</label><input id="port" name="port" type="number" value="5443" min="1" max="65535" required>
+        <label for="encryptCredentialFiles">Credential metadata</label><select id="encryptCredentialFiles" name="encryptCredentialFiles"><option value="true">Encrypted (recommended)</option><option value="false">Readable JSON ? exposes account metadata and allows modification</option></select>
         <label for="provider">Key storage</label><select id="provider" name="provider"><option value="File">File — encrypted on disk</option><option value="Tpm">TPM — hardware signing, encrypted metadata on disk</option><option value="Memory">Memory — credentials lost when the server stops</option></select>
         <small>TPM mode checks hardware during setup and creates a recoverable master. Each user receives a copy of master.json.</small>
         <label for="recoveryPfx">Existing TPM recovery PFX (optional, TPM mode only)</label><input id="recoveryPfx" name="recoveryPfx" type="file" accept=".pfx">

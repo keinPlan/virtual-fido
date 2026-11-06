@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using VFido.SecretManager.Protection;
 using VFido.SecretManager.FileBasedSecretStore;
 using VFido.SecretManager.MtlsBasedSecretStoreServer.Pki;
 using VFido.SecretManager.MemoryBasedSecretStore;
@@ -46,64 +48,63 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer
             File.Exists(Path.Combine(GetUserDirectory(username), "verifier.bin"));
 
         /// <summary>Throws <see cref="InvalidCredentialsException"/> if the password doesn't match what the directory was created with.</summary>
-        public IFido2SecretManager BuildManagerFromPassword(string username, string password)
-        {
-            var userDirectory = GetUserDirectory(username);
-            var keyStore = new VFido.SecretManager.FileBasedSecretStore.FileBasedSecretStore(
-                Path.Combine(userDirectory, "keys"), username, password, Path.Combine(userDirectory, "certs"), userDirectory);
-            var credentialStore = new FileBasedCredentialStore(
-                Path.Combine(userDirectory, "credentials"), username, password, userDirectory);
-            // FileBasedSecretStore also implements IPinStateStore; Fido2SecretManager detects and
-            // forwards LoadPinStateAsync/SavePinStateAsync to it automatically.
-            return BuildManager(username, keyStore, credentialStore,
-                () => new TpmBasedCredentialStore(Path.Combine(userDirectory, "credentials"), username, password, userDirectory));
-        }
+        public IFido2SecretManager BuildManagerFromPassword(string username, string password) =>
+            BuildManager(username, PasswordStorageProtection.Open(GetUserDirectory(username), username, password));
 
         public IFido2SecretManager BuildPasswordlessManager(string username)
         {
-            var userDirectory = GetUserDirectory(username);
-            Directory.CreateDirectory(userDirectory);
-            var key = _keyProtector.GetOrCreateKey(userDirectory);
-
-            var keyStore = new VFido.SecretManager.FileBasedSecretStore.FileBasedSecretStore(
-                Path.Combine(userDirectory, "keys"), key, Path.Combine(userDirectory, "certs"), userDirectory);
-            var credentialStore = new FileBasedCredentialStore(
-                Path.Combine(userDirectory, "credentials"), key, userDirectory);
-            return BuildManager(username, keyStore, credentialStore,
-                () => new TpmBasedCredentialStore(Path.Combine(userDirectory, "credentials"), key, userDirectory));
+            var directory = GetUserDirectory(username);
+            Directory.CreateDirectory(directory);
+            var key = _keyProtector.GetOrCreateKey(directory);
+            try { return BuildManager(username, new AesPayloadProtector(key)); }
+            finally { CryptographicOperations.ZeroMemory(key); }
         }
 
-        private IFido2SecretManager BuildManager(string username,
-            VFido.SecretManager.FileBasedSecretStore.FileBasedSecretStore fileKeys,
-            FileBasedCredentialStore fileCredentials, Func<ICredentialStore> tpmCredentials)
+        private IFido2SecretManager BuildManager(string username, AesPayloadProtector protection)
         {
-            if (_provider == ServerStorageProvider.File)
-                return new Fido2SecretManager(fileKeys, fileCredentials);
-
-            // Password verification above must run on every login, including cache hits.
-            lock (_sync)
+            // Authentication/unlocking runs before cache lookup on every login.
+            try
             {
-                ObjectDisposedException.ThrowIf(_disposed, this);
-                if (_managers.TryGetValue(username, out var existing)) return existing;
-                IFido2SecretManager manager;
-                if (_provider == ServerStorageProvider.Memory)
+                lock (_sync)
                 {
-                    manager = new Fido2SecretManager(new MemoryBasedSecretStore.MemoryBasedSecretStore(),
-                        new InMemoryCredentialStore(), new MemoryPinStateStore());
+                    ObjectDisposedException.ThrowIf(_disposed, this);
+                    if (_managers.TryGetValue(username, out var existing))
+                    {
+                        protection.Dispose();
+                        return existing;
+                    }
+                    var directory = GetUserDirectory(username);
+                    IFido2SecretManager manager;
+                    if (_provider == ServerStorageProvider.Memory)
+                    {
+                        protection.Dispose();
+                        manager = new Fido2SecretManager(new MemoryBasedSecretStore.MemoryBasedSecretStore(),
+                            new InMemoryCredentialStore(), new MemoryPinStateStore());
+                    }
+                    else
+                    {
+                        var encryptedFiles = new EncryptedFileStorage(protection);
+                        IFileStorage credentialFiles = _options.EncryptCredentialFiles ? encryptedFiles : new PlainFileStorage();
+                        var credentials = new FileBasedCredentialStore(Path.Combine(directory, "credentials"), credentialFiles);
+                        var pin = new FilePinStateStore(directory, encryptedFiles);
+                        IKeyStore keys;
+                        if (_provider == ServerStorageProvider.File)
+                            keys = new FileBasedSecretStore.FileBasedSecretStore(Path.Combine(directory, "keys"),
+                                encryptedFiles, Path.Combine(directory, "certs"), directory);
+                        else if (_provider == ServerStorageProvider.Tpm)
+                        {
+                            ServerTpmMaster.CopyToUser(_options, directory);
+                            keys = new TpmBasedSecretStore.TpmBasedSecretStore(Path.Combine(directory, "keys"),
+                                masterPassword: ServerTpmMaster.GetAuthorization(_options));
+                        }
+                        else throw new InvalidOperationException("StorageProvider must be File, Tpm, or Memory.");
+                        manager = new Fido2SecretManager(keys, credentials, pin, ownsKeyStore: true, ownedStorage: protection);
+                    }
+                    _managers.Add(username, manager);
+                    return manager;
                 }
-                else if (_provider == ServerStorageProvider.Tpm)
-                {
-                    var directory = Path.Combine(GetUserDirectory(username), "keys");
-                    ServerTpmMaster.CopyToUser(_options, GetUserDirectory(username));
-                    var authorization = ServerTpmMaster.GetAuthorization(_options);
-                    var credentials = tpmCredentials();
-                    var keys = new TpmBasedSecretStore.TpmBasedSecretStore(directory, masterPassword: authorization);
-                    manager = new Fido2SecretManager(keys, credentials, fileKeys, ownsKeyStore: true);
-                }
-                else throw new InvalidOperationException("StorageProvider must be File, Tpm, or Memory.");
-                _managers.Add(username, manager);
-                return manager;
             }
+            catch { protection.Dispose(); throw; }
         }
 
         public void Dispose()
