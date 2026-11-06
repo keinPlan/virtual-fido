@@ -132,12 +132,12 @@ To recover a copied stick folder on another TPM, disconnect it and use **Edit > 
 
 ### Server management dashboard
 
-The mTLS secret store server serves a read-only management dashboard at
+The mTLS secret store server serves a management dashboard at
 `https://localhost:5443/admin` (use your configured hostname and port).
 It shows uptime, server certificate expiry, provisioned users, encrypted credential
 file counts, and unexpired password-session counts. User inventory can be searched
 and refreshes every 30 seconds. The dashboard does not decrypt stored credentials
-or expose passwords, private keys, or bearer tokens.
+or expose passwords or bearer tokens in its inventory.
 
 To enable access:
 
@@ -159,7 +159,21 @@ certificates do not grant administrator access. Allowlisted certificates must st
 pass the server's existing mTLS validation. All dashboard assets and inventory
 endpoints require administrator access and send `Cache-Control: no-store`.
 
-User provisioning and certificate revocation use the existing `create-user` and
-`revoke-user` CLI commands. Restart the server after revocation. A user directory's
-PFX presence is not proof of certificate validity; session counts cover password
-login tokens, not open connections or certificate-only users.
+Use **Create user** to supply a username, CA passphrase, login password (or select
+certificate-only authentication), and optional PFX password. The dashboard downloads
+the new client PFX and saves a server copy in the user's directory. Existing users
+cannot be overwritten. New usernames use 1?64 ASCII letters, numbers, underscores,
+or hyphens, starting with a letter or number; Windows device names are excluded.
+
+Use **Revoke** beside a user to revoke their issued certificate. Older users without
+public certificate metadata require their existing PFX password. Dashboard revocations
+persist across restarts and block subsequent requests immediately, including on existing
+TLS connections; requests already in progress may complete. Stored credentials are retained.
+Revoking the certificate currently used to administer the dashboard is blocked; use a
+different administrator certificate for that operation.
+
+The `create-user` and `revoke-user` CLI commands remain available. CLI revocations still
+require a server restart. PFX presence alone is not proof of certificate validity;
+legacy certificate status is shown as unknown until public metadata is available.
+Session counts cover unexpired password login tokens, not open connections or
+certificate-only users (revoked certificates cannot use their remaining tokens).

@@ -20,7 +20,7 @@ namespace VFido.SecretManager.MtlsBasedSecretStoreServer
 
         public int TokenLifetimeMinutes { get; set; } = 30;
 
-        /// <summary>Client certificate SHA-1 thumbprints allowed to view /admin. Empty disables dashboard access.</summary>
+        /// <summary>Client certificate SHA-1 thumbprints allowed to manage users and certificates through /admin. Empty disables dashboard access.</summary>
         public string[] AdminCertificateThumbprints { get; set; } = [];
 
         /// <summary>Server PKI, protection certificate, and TPM master template in <c>tpm/master.json</c>. Defaults next to the server executable.</summary>

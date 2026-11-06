@@ -7,19 +7,25 @@ function renderUsers() {
   const users = inventory.users.filter(user => user.name.toLocaleLowerCase().includes(query));
   const rows = users.map(user => {
     const row = document.createElement('tr');
-    [user.name, user.passwordRequired ? 'Certificate + password' : 'Certificate only', user.credentialCount, user.activeSessions, user.certificateIssued ? 'PFX present' : 'No PFX file'].forEach((value, index) => {
+    [user.name, user.passwordRequired ? 'Certificate + password' : 'Certificate only', user.credentialCount, user.activeSessions, user.certificateRevoked === true ? 'Revoked' : user.certificateIssued ? (user.certificateRevoked === false ? 'Issued' : 'PFX present (status unknown)') : 'No PFX file'].forEach((value, index) => {
       const cell = document.createElement('td');
       const node = index === 1 ? document.createElement('span') : cell;
       if (index === 1) { node.className = 'pill' + (user.passwordRequired ? '' : ' passwordless'); cell.append(node); }
       node.textContent = value;
       row.append(cell);
     });
+    const actions = document.createElement('td');
+    const revoke = document.createElement('button');
+    revoke.type = 'button'; revoke.textContent = 'Revoke'; revoke.className = 'danger';
+    revoke.disabled = !user.certificateIssued || user.certificateRevoked === true;
+    revoke.addEventListener('click', () => openRevocation(user));
+    actions.append(revoke); row.append(actions);
     return row;
   });
   if (!rows.length) {
     const row = document.createElement('tr');
-    const cell = document.createElement('td'); cell.colSpan = 5;
-    cell.textContent = query ? 'No users match your search.' : 'No users provisioned. Use create-user on the server to get started.';
+    const cell = document.createElement('td'); cell.colSpan = 6;
+    cell.textContent = query ? 'No users match your search.' : 'No users provisioned. Use the Create user form to get started.';
     row.append(cell); rows.push(row);
   }
   el('users').replaceChildren(...rows);
@@ -55,3 +61,65 @@ el('refresh').addEventListener('click', refresh);
 el('search').addEventListener('input', renderUsers);
 refresh();
 setInterval(() => { if (!document.hidden && !el('refresh').disabled) refresh(); }, 30000);
+
+async function mutate(url, body) {
+  const response = await fetch(url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-VFido-Admin': '1' },
+    body: JSON.stringify(body), cache: 'no-store'
+  });
+  if (!response.ok) {
+    const problem = await response.json().catch(() => null);
+    throw new Error(problem?.detail || `Request failed (${response.status}).`);
+  }
+  return response;
+}
+const createForm = el('create-user');
+createForm.elements.noPassword.addEventListener('change', () => {
+  createForm.elements.loginPassword.disabled = createForm.elements.noPassword.checked;
+  createForm.elements.loginPassword.required = !createForm.elements.noPassword.checked;
+});
+createForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = createForm.querySelector('button'); button.disabled = true;
+  el('action-status').textContent = 'Creating user?';
+  const username = createForm.elements.username.value;
+  try {
+    const response = await mutate('/admin/api/users', {
+      username, caPassphrase: createForm.elements.caPassphrase.value,
+      loginPassword: createForm.elements.loginPassword.value,
+      pfxPassword: createForm.elements.pfxPassword.value,
+      noPassword: createForm.elements.noPassword.checked
+    });
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement('a'); link.href = url; link.download = `${username}.pfx`;
+    document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    createForm.reset(); createForm.elements.loginPassword.disabled = false; createForm.elements.loginPassword.required = true;
+    el('action-status').textContent = `Created ${username}. PFX download started; a copy is also saved in the server user directory.`;
+    await refresh();
+  } catch (error) { el('action-status').textContent = error.message; }
+  finally {
+    createForm.elements.caPassphrase.value = ''; createForm.elements.loginPassword.value = ''; createForm.elements.pfxPassword.value = '';
+    button.disabled = false;
+  }
+});
+let revokingUser = null;
+function openRevocation(user) {
+  revokingUser = user;
+  el('revoke-description').textContent = `Revoke the certificate for ${user.name}? Subsequent requests will be blocked immediately. Stored credentials will be retained. This cannot be undone from the dashboard.`;
+  el('revoke-password-label').hidden = !user.revocationPasswordRequired;
+  el('revoke-password').value = ''; el('revoke-error').textContent = '';
+  el('revoke-dialog').showModal();
+}
+el('cancel-revoke').addEventListener('click', () => el('revoke-dialog').close());
+el('revoke-dialog').addEventListener('close', () => { el('revoke-password').value = ''; });
+el('revoke-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = event.target.querySelector('[type="submit"]'); button.disabled = true;
+  try {
+    await mutate(`/admin/api/users/${encodeURIComponent(revokingUser.name)}/revoke`, { pfxPassword: el('revoke-password').value });
+    el('action-status').textContent = `Certificate for ${revokingUser.name} revoked.`;
+    el('revoke-dialog').close(); await refresh();
+  } catch (error) { el('revoke-error').textContent = error.message; }
+  finally { button.disabled = false; el('revoke-password').value = ''; }
+});

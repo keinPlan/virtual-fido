@@ -95,6 +95,8 @@ builder.Services.AddDataProtection()
     .ProtectKeysWithCertificate(masterProtectionCertificate);
 
 builder.Services.AddSingleton(serverOptions);
+builder.Services.AddSingleton(revocations);
+builder.Services.AddSingleton<DashboardUserManagement>();
 builder.Services.AddSingleton(new SessionTokenService(TimeSpan.FromMinutes(serverOptions.TokenLifetimeMinutes)));
 builder.Services.AddSingleton<UserSessionCache>();
 builder.Services.AddSingleton<UserKeyProtector>();
@@ -105,6 +107,12 @@ await using var app = builder.Build();
 app.Use(async (http, next) =>
 {
     var certificate = http.Connection.ClientCertificate;
+    // Check each request as well as the handshake, including reused TLS connections.
+    if (certificate is not null && revocations.IsRevoked(certificate.SerialNumber))
+    {
+        http.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return;
+    }
     using var scope = app.Logger.BeginScope(new Dictionary<string, object?>
     {
         ["Username"] = certificate?.GetNameInfo(X509NameType.SimpleName, false),
